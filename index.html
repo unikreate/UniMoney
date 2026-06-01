@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>UniMoney - Travel Expense Tracker</title>
+  <title>UniMoney Expense Manager</title>
   
   <!-- Tailwind CSS CDN for high-end modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -101,7 +101,7 @@
 
     // --- STREAMING_CHUNK:App component entry definition... ---
     function App() {
-      // Initialize Supabase configuration checks
+      // Initialize Supabase configuration checks from localStorage
       const [supabaseLoaded, setSupabaseLoaded] = useState(false);
       const [supabaseConfig, setSupabaseConfig] = useState(() => {
         const savedUrl = localStorage.getItem('TRAVEL_SUPABASE_URL') || '';
@@ -119,8 +119,11 @@
       const [expenses, setExpenses] = useState([]);
       const [dataLoaded, setDataLoaded] = useState(false);
       
-      // Active credential logic
-      const [loggedInUser, setLoggedInUser] = useState(null); 
+      // Active credential logic (Read from localStorage so they remain logged in across laptop/mobile!)
+      const [loggedInUser, setLoggedInUser] = useState(() => {
+        const savedSession = localStorage.getItem('TRAVEL_LOGGED_IN_USER');
+        return savedSession ? JSON.parse(savedSession) : null;
+      }); 
       const [loginForm, setLoginForm] = useState({ username: '', password: '' });
       const [setupForm, setSetupForm] = useState({ username: '', password: '' });
       const [authError, setAuthError] = useState('');
@@ -135,7 +138,6 @@
 
       // --- STREAMING_CHUNK:Loading database CDN modules dynamically... ---
       useEffect(() => {
-        // Load the CDN script directly to bypass compile constraints 
         if (window.supabase) {
           setSupabaseLoaded(true);
           return;
@@ -275,6 +277,7 @@
           localStorage.setItem('DEMO_USERS', JSON.stringify(currentUsers));
           setAppUsers(currentUsers);
           setLoggedInUser(newAdmin);
+          localStorage.setItem('TRAVEL_LOGGED_IN_USER', JSON.stringify(newAdmin));
           return;
         }
 
@@ -295,9 +298,10 @@
           if (error) throw error;
           if (data && data.length > 0) {
             setLoggedInUser(data[0]);
+            localStorage.setItem('TRAVEL_LOGGED_IN_USER', JSON.stringify(data[0]));
           }
         } catch (err) {
-          setAuthError("Failed to deploy Admin credential profile: " + err.message);
+          setAuthError("Failed to deploy Admin credential profile: " + err.message + ". Hint: Make sure you ran the SQL script to turn off RLS in Supabase!");
         }
       };
 
@@ -310,6 +314,7 @@
 
         if (foundUser) {
           setLoggedInUser(foundUser);
+          localStorage.setItem('TRAVEL_LOGGED_IN_USER', JSON.stringify(foundUser));
           setLoginForm({ username: '', password: '' });
           setActiveTab('group');
         } else {
@@ -319,6 +324,7 @@
 
       const handleLogout = () => {
         setLoggedInUser(null);
+        localStorage.removeItem('TRAVEL_LOGGED_IN_USER');
         setActiveTab('group');
         setIsSidebarOpen(false);
       };
@@ -595,7 +601,7 @@
         return (
           <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
             {isDemoMode && (
-              <div className="mb-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs px-4 py-2.5 rounded-xl max-w-md text-center">
+              <div className="mb-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs px-4 py-2.5 rounded-xl max-w-md text-center animate-pulse">
                 Currently running in <strong>Demo Sandbox Mode</strong>. 
                 <button 
                   onClick={() => {
@@ -611,18 +617,22 @@
             <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
               <div className="bg-gradient-to-br from-indigo-700 to-blue-600 p-8 text-center text-white">
                 <div className="bg-white/15 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
-                  {hasAdmin ? <Icon name="lock" className="w-8 h-8 text-white" /> : <Icon name="shield" className="w-8 h-8 text-white" />}
-                </div>
-                <h1 className="text-3xl font-extrabold tracking-tight mb-1">Trip Tracker</h1>
-                <p className="text-blue-100/90 text-sm">
+                {hasAdmin ? <Icon name="lock" className="w-8 h-8 text-white" /> : <Icon name="shield" className="w-8 h-8 text-white" />}
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight mb-1">UniMoney Expense Manager</h1>
+              <p className="text-blue-100/90 text-sm">
                   {hasAdmin ? "Secure Workspace Credentials" : "Admin Account Setup Needed"}
                 </p>
               </div>
               
               <div className="p-8">
                 {authError && (
-                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-3.5 rounded-xl text-sm mb-6 flex items-center gap-2.5">
-                    <Icon name="alertCircle" className="w-5 h-5 text-rose-400 shrink-0" /> {authError}
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-3.5 rounded-xl text-sm mb-6 flex flex-col gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <Icon name="alertCircle" className="w-5 h-5 text-rose-400 shrink-0" /> 
+                      <span className="font-bold">Error Occurred</span>
+                    </div>
+                    <span className="text-xs leading-relaxed">{authError}</span>
                   </div>
                 )}
 
@@ -705,7 +715,7 @@
                 <Icon name="coins" className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="font-extrabold text-white text-base tracking-tight">Trip Tracker</h1>
+                <h1 className="font-extrabold text-white text-base tracking-tight">UniMoney Expense Manager</h1>
                 <p className="text-[10px] text-slate-400">
                   {isDemoMode ? "Sandbox Playroom" : "Synced to Supabase Cloud"}
                 </p>
@@ -730,7 +740,7 @@
                   <Icon name="coins" className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="font-extrabold text-white text-lg tracking-tight">Trip Tracker</h1>
+                  <h1 className="font-extrabold text-white text-lg tracking-tight">UniMoney Expense Manager</h1>
                   <span className="text-xs text-indigo-400 font-medium">
                     {isDemoMode ? "Local Sandbox" : "Supabase Cloud"}
                   </span>
