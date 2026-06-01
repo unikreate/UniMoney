@@ -3,103 +3,1165 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>UniMoney - Trip Tracker</title>
+  <title>UniMoney - Travel Expense Tracker</title>
   
-  <!-- Tailwind CSS for Styling -->
+  <!-- Tailwind CSS CDN for high-end modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Import Maps to load React and Supabase directly in the browser -->
-  <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "lucide-react": "https://esm.sh/lucide-react@0.292.0",
-        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.38.4"
-      }
-    }
-  </script>
+  <!-- React & ReactDOM CDNs to run modern component interfaces -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   
-  <!-- Babel to compile React JSX in the browser -->
+  <!-- Babel compiler to compile JSX live in the browser without local build tools -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    /* Hide scrollbar utility */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
 </head>
-<body>
+<body class="bg-slate-950 text-slate-100 antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
+
+  <!-- Target root div where our compiled React app mounts -->
   <div id="root"></div>
 
-  <!-- Main Application Code -->
-  <script type="text/babel" data-type="module">
-    import React, { useState, useEffect, useMemo } from 'react';
-    import { createRoot } from 'react-dom/client';
-    import { Trash2, UserPlus, Shield, Lock, PlusCircle, Users, AlertCircle, LogOut, Wallet, UserCircle, Eye, Coins } from 'lucide-react';
-    import { createClient } from '@supabase/supabase-js';
+  <!-- React JSX Logic block -->
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
 
-    // ==========================================
-    // 🔴 PASTE YOUR SUPABASE URL AND KEY BELOW 🔴
-    // ==========================================
-    const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
-    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
-    // ==========================================
+    // --- STREAMING_CHUNK:Configuring currency and inline SVG icons... ---
+    // Storing base expenses in Indian Rupee (INR)
+    const EXCHANGE_RATES = {
+      INR: 1,
+      USD: 0.012, 
+      EUR: 0.011, 
+      GBP: 0.0095 
+    };
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const CURRENCY_SYMBOLS = {
+      INR: '₹',
+      USD: '$',
+      EUR: '€',
+      GBP: '£'
+    };
 
-    // Currency Configuration
-    const EXCHANGE_RATES = { INR: 1, USD: 0.012, EUR: 0.011, GBP: 0.0095 };
-    const CURRENCY_SYMBOLS = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+    // Lightweight, bulletproof inline SVG Icon Component to replace heavy packages
+    function Icon({ name, className = "w-5 h-5", size = 20 }) {
+      const paths = {
+        coins: <path d="M11 15h2m-2-3h2m-2-3h2M3 12a9 9 0 1 1 18 0 9 9 0 0 1-18 0z" />,
+        wallet: <path d="M21 12V7H5a2 2 0 0 1 0-4h14M3 11v9a2 2 0 0 0 2 2h16a1 1 0 0 0 1-1V12a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z" />,
+        users: <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m8-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm14-2a4 4 0 0 0-3-3.87m0 7.75A4 4 0 0 0 22 12m-5-6a3 3 0 1 0-3 3" />,
+        shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+        lock: <path d="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-12 0V7a5 5 0 0 1 10 0v4" />,
+        plus: <path d="M12 5v14M5 12h14" />,
+        trash: <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6m4-6v6" />,
+        userPlus: <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m8-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm11 1h6m-3-3v6" />,
+        logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5-5-5m5 5H9" />,
+        user: <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m8-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+        chevronRight: <path d="M9 18l6-6-6-6" />,
+        menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+        x: <path d="M18 6L6 18M6 6l12 12" />,
+        check: <path d="M20 6L9 17l-5-5" />,
+        eye: <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />,
+        alertCircle: <path d="M12 8v4m0 4h.01M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10z" />,
+        play: <path d="M5 3l14 9-14 9V3z" />
+      };
 
+      return (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={className}
+        >
+          {paths[name] || null}
+        </svg>
+      );
+    }
+
+    // --- STREAMING_CHUNK:App component entry definition... ---
     function App() {
-      // State
+      // Initialize Supabase configuration checks
+      const [supabaseLoaded, setSupabaseLoaded] = useState(false);
+      const [supabaseConfig, setSupabaseConfig] = useState(() => {
+        const savedUrl = localStorage.getItem('TRAVEL_SUPABASE_URL') || '';
+        const savedKey = localStorage.getItem('TRAVEL_SUPABASE_KEY') || '';
+        return { url: savedUrl, key: savedKey };
+      });
+      const [isConfigured, setIsConfigured] = useState(!!(supabaseConfig.url && supabaseConfig.key));
+      const [configError, setConfigError] = useState('');
+      
+      // Fallback sandbox play mode in case they have not populated keys yet
+      const [isDemoMode, setIsDemoMode] = useState(!isConfigured);
+      
+      // Database structures
       const [appUsers, setAppUsers] = useState([]); 
       const [expenses, setExpenses] = useState([]);
       const [dataLoaded, setDataLoaded] = useState(false);
+      
+      // Active credential logic
       const [loggedInUser, setLoggedInUser] = useState(null); 
       const [loginForm, setLoginForm] = useState({ username: '', password: '' });
       const [setupForm, setSetupForm] = useState({ username: '', password: '' });
       const [authError, setAuthError] = useState('');
+      
+      // Side-by-side UI Drawer structures
       const [activeTab, setActiveTab] = useState('group'); 
+      const [isSidebarOpen, setIsSidebarOpen] = useState(false);
       const [newExpense, setNewExpense] = useState({ amount: '', description: '', paidBy: '' });
       const [newFriend, setNewFriend] = useState({ username: '', password: '' });
       const [uiError, setUiError] = useState('');
-      const [viewCurrency, setViewCurrency] = useState('INR'); 
+      const [viewCurrency, setViewCurrency] = useState('INR'); // Defaults to Indian Rupee (₹)
 
-      // Fetch Data & Listen for Realtime Changes
+      // --- STREAMING_CHUNK:Loading database CDN modules dynamically... ---
       useEffect(() => {
-        const fetchData = async () => {
-          const { data: usersData } = await supabase.from('app_users').select('*');
-          if (usersData) setAppUsers(usersData);
-
-          const { data: expData } = await supabase.from('expenses').select('*').order('timestamp', { ascending: false });
-          if (expData) setExpenses(expData);
-          
-          setDataLoaded(true);
+        // Load the CDN script directly to bypass compile constraints 
+        if (window.supabase) {
+          setSupabaseLoaded(true);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        script.async = true;
+        script.onload = () => {
+          setSupabaseLoaded(true);
         };
-
-        fetchData();
-
-        // Realtime Subscriptions
-        const usersSub = supabase.channel('users_channel')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, fetchData)
-          .subscribe();
-
-        const expensesSub = supabase.channel('expenses_channel')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchData)
-          .subscribe();
-
-        return () => {
-          supabase.removeChannel(usersSub);
-          supabase.removeChannel(expensesSub);
-        };
+        document.body.appendChild(script);
       }, []);
 
-      // Actions
+      const getSupabaseClient = () => {
+        if (!supabaseLoaded || !window.supabase || !supabaseConfig.url || !supabaseConfig.key) {
+          return null;
+        }
+        try {
+          return window.supabase.createClient(supabaseConfig.url, supabaseConfig.key);
+        } catch (e) {
+          console.error(e);
+          return null;
+        }
+      };
+
+      const handleSaveConfig = (e) => {
+        e.preventDefault();
+        setConfigError('');
+        if (!supabaseConfig.url || !supabaseConfig.key) {
+          setConfigError('Both credentials are required to verify the server handshake.');
+          return;
+        }
+        
+        try {
+          const client = window.supabase.createClient(supabaseConfig.url, supabaseConfig.key);
+          if (client) {
+            localStorage.setItem('TRAVEL_SUPABASE_URL', supabaseConfig.url);
+            localStorage.setItem('TRAVEL_SUPABASE_KEY', supabaseConfig.key);
+            setIsConfigured(true);
+            setIsDemoMode(false);
+            setDataLoaded(false);
+          }
+        } catch (err) {
+          setConfigError('Invalid Supabase Connection Configuration URL structure.');
+        }
+      };
+
+      // --- STREAMING_CHUNK:Designing data loading strategies... ---
+      const fetchUsers = async () => {
+        const supabaseClient = getSupabaseClient();
+        if (!supabaseClient || isDemoMode) {
+          const demoUsers = JSON.parse(localStorage.getItem('DEMO_USERS')) || [];
+          setAppUsers(demoUsers);
+          return;
+        }
+        try {
+          const { data, error } = await supabaseClient
+            .from('app_users')
+            .select('*');
+          if (error) throw error;
+          setAppUsers(data || []);
+        } catch (err) {
+          console.error("Error fetching database users:", err.message);
+        }
+      };
+
+      const fetchExpenses = async () => {
+        const supabaseClient = getSupabaseClient();
+        if (!supabaseClient || isDemoMode) {
+          const demoExpenses = JSON.parse(localStorage.getItem('DEMO_EXPENSES')) || [];
+          setExpenses(demoExpenses);
+          return;
+        }
+        try {
+          const { data, error } = await supabaseClient
+            .from('expenses')
+            .select('*')
+            .order('timestamp', { ascending: false });
+          if (error) throw error;
+          setExpenses(data || []);
+        } catch (err) {
+          console.error("Error fetching database expenses:", err.message);
+        }
+      };
+
+      useEffect(() => {
+        if (!supabaseLoaded) return;
+
+        const loadAll = async () => {
+          await Promise.all([fetchUsers(), fetchExpenses()]);
+          setDataLoaded(true);
+        };
+        loadAll();
+
+        // Bind live server real-time sync listeners
+        const client = getSupabaseClient();
+        if (client && !isDemoMode) {
+          const usersSubscription = client
+            .channel('public:app_users')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => {
+              fetchUsers();
+            })
+            .subscribe();
+
+          const expensesSubscription = client
+            .channel('public:expenses')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
+              fetchExpenses();
+            })
+            .subscribe();
+
+          return () => {
+            client.removeChannel(usersSubscription);
+            client.removeChannel(expensesSubscription);
+          };
+        }
+      }, [supabaseLoaded, isConfigured, isDemoMode]);
+
+      // --- STREAMING_CHUNK:Implementing account creations and logins... ---
       const handleSetupAdmin = async (e) => {
         e.preventDefault();
         setAuthError('');
-        try {
-          const { data, error } = await supabase.from('app_users').insert([{
-            username: setupForm.username.trim(),
-            password: setupForm.password,
+        if (!setupForm.username || !setupForm.password) return;
+
+        const adminUsername = setupForm.username.trim();
+        const adminPassword = setupForm.password;
+
+        if (isDemoMode) {
+          const newAdmin = {
+            id: 'admin-' + Date.now(),
+            username: adminUsername,
+            password: adminPassword,
             role: 'admin',
             created_at: Date.now()
-          }]).select();
-          
+          };
+          const currentUsers = [newAdmin, ...appUsers];
+          localStorage.setItem('DEMO_USERS', JSON.stringify(currentUsers));
+          setAppUsers(currentUsers);
+          setLoggedInUser(newAdmin);
+          return;
+        }
+
+        try {
+          const client = getSupabaseClient();
+          const { data, error } = await client
+            .from('app_users')
+            .insert([
+              {
+                username: adminUsername,
+                password: adminPassword,
+                role: 'admin',
+                created_at: Date.now()
+              }
+            ])
+            .select();
+
           if (error) throw error;
+          if (data && data.length > 0) {
+            setLoggedInUser(data[0]);
+          }
+        } catch (err) {
+          setAuthError("Failed to deploy Admin credential profile: " + err.message);
+        }
+      };
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        setAuthError('');
+        const foundUser = appUsers.find(
+          u => u.username.toLowerCase() === loginForm.username.trim().toLowerCase() && u.password === loginForm.password
+        );
+
+        if (foundUser) {
+          setLoggedInUser(foundUser);
+          setLoginForm({ username: '', password: '' });
+          setActiveTab('group');
+        } else {
+          setAuthError("Invalid username credential or password sequence.");
+        }
+      };
+
+      const handleLogout = () => {
+        setLoggedInUser(null);
+        setActiveTab('group');
+        setIsSidebarOpen(false);
+      };
+
+      // --- STREAMING_CHUNK:Mathematical currency converters... ---
+      const formatAmount = (baseAmount) => {
+        const rate = EXCHANGE_RATES[viewCurrency];
+        const converted = baseAmount * rate;
+        return `${CURRENCY_SYMBOLS[viewCurrency]}${converted.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+      };
+
+      const showError = (msg) => {
+        setUiError(msg);
+        setTimeout(() => setUiError(''), 4000);
+      };
+
+      // --- STREAMING_CHUNK:Configuring expense transaction controllers... ---
+      const handleAddExpense = async (e) => {
+        e.preventDefault();
+        const amountNum = parseFloat(newExpense.amount);
+        if (!amountNum || !newExpense.description) {
+          showError("Please specify a valid numeric amount and description.");
+          return;
+        }
+
+        // Always normalize and save the core transaction ledger inside INR in database
+        const baseRate = EXCHANGE_RATES[viewCurrency];
+        const amountInBaseINR = amountNum / baseRate;
+
+        let payer = activeTab === 'group' ? newExpense.paidBy : loggedInUser.username;
+        if (activeTab === 'group' && !payer) {
+          showError("Select a verified friend account who paid this transaction.");
+          return;
+        }
+
+        if (isDemoMode) {
+          const newExp = {
+            id: 'exp-' + Date.now(),
+            type: activeTab === 'group' ? 'group' : 'personal',
+            amount: amountInBaseINR,
+            description: newExpense.description,
+            paid_by: payer,
+            timestamp: Date.now(),
+            added_by_uid: loggedInUser.id
+          };
+          const currentExpenses = [newExp, ...expenses];
+          localStorage.setItem('DEMO_EXPENSES', JSON.stringify(currentExpenses));
+          setExpenses(currentExpenses);
+          setNewExpense({ amount: '', description: '', paidBy: '' });
+          return;
+        }
+
+        try {
+          const client = getSupabaseClient();
+          const { error } = await client
+            .from('expenses')
+            .insert([
+              {
+                type: activeTab === 'group' ? 'group' : 'personal',
+                amount: amountInBaseINR,
+                description: newExpense.description,
+                paid_by: payer,
+                timestamp: Date.now(),
+                added_by_uid: loggedInUser.id
+              }
+            ]);
+
+          if (error) throw error;
+          setNewExpense({ amount: '', description: '', paidBy: '' });
+        } catch (err) {
+          showError("Failed to add transaction record: " + err.message);
+        }
+      };
+
+      const handleDeleteExpense = async (expenseId) => {
+        if (loggedInUser.role !== 'admin') return;
+        
+        if (isDemoMode) {
+          const updated = expenses.filter(e => e.id !== expenseId);
+          localStorage.setItem('DEMO_EXPENSES', JSON.stringify(updated));
+          setExpenses(updated);
+          return;
+        }
+
+        try {
+          const client = getSupabaseClient();
+          const { error } = await client
+            .from('expenses')
+            .delete()
+            .eq('id', expenseId);
+          if (error) throw error;
+        } catch (err) {
+          showError("Failed to delete database entry.");
+        }
+      };
+
+      // --- STREAMING_CHUNK:Implementing admin friend creation managers... ---
+      const handleCreateFriend = async (e) => {
+        e.preventDefault();
+        if (loggedInUser.role !== 'admin') return;
+        if (!newFriend.username || !newFriend.password) return;
+
+        if (appUsers.some(u => u.username.toLowerCase() === newFriend.username.trim().toLowerCase())) {
+          showError("User profile name already registered.");
+          return;
+        }
+
+        if (isDemoMode) {
+          const newUsr = {
+            id: 'user-' + Date.now(),
+            username: newFriend.username.trim(),
+            password: newFriend.password,
+            role: 'friend',
+            created_at: Date.now()
+          };
+          const updated = [...appUsers, newUsr];
+          localStorage.setItem('DEMO_USERS', JSON.stringify(updated));
+          setAppUsers(updated);
+          setNewFriend({ username: '', password: '' });
+          return;
+        }
+
+        try {
+          const client = getSupabaseClient();
+          const { error } = await client
+            .from('app_users')
+            .insert([
+              {
+                username: newFriend.username.trim(),
+                password: newFriend.password,
+                role: 'friend',
+                created_at: Date.now()
+              }
+            ]);
+
+          if (error) throw error;
+          setNewFriend({ username: '', password: '' });
+        } catch (err) {
+          showError("Failed to write user account key: " + err.message);
+        }
+      };
+
+      const handleDeleteUser = async (userId) => {
+        if (loggedInUser.role !== 'admin') return;
+
+        if (isDemoMode) {
+          const updated = appUsers.filter(u => u.id !== userId);
+          localStorage.setItem('DEMO_USERS', JSON.stringify(updated));
+          setAppUsers(updated);
+          return;
+        }
+
+        try {
+          const client = getSupabaseClient();
+          const { error } = await client
+            .from('app_users')
+            .delete()
+            .eq('id', userId);
+          if (error) throw error;
+        } catch (err) {
+          showError("Failed to delete user login profile.");
+        }
+      };
+
+      // --- STREAMING_CHUNK:Derived analytics state... ---
+      const visibleExpenses = useMemo(() => {
+        if (activeTab === 'group') {
+          return expenses.filter(e => e.type === 'group');
+        } else if (activeTab === 'personal') {
+          if (loggedInUser?.role === 'admin') {
+            return expenses.filter(e => e.type === 'personal');
+          } else {
+            return expenses.filter(e => e.type === 'personal' && e.paid_by === loggedInUser?.username);
+          }
+        }
+        return [];
+      }, [expenses, activeTab, loggedInUser]);
+
+      const groupTotal = useMemo(() => {
+        return expenses.filter(e => e.type === 'group').reduce((sum, e) => sum + e.amount, 0);
+      }, [expenses]);
+
+      const groupExpensesByPerson = useMemo(() => {
+        const summary = {};
+        appUsers.forEach(u => summary[u.username] = 0);
+        expenses.filter(e => e.type === 'group').forEach(exp => {
+          if (summary[exp.paid_by] !== undefined) summary[exp.paid_by] += exp.amount;
+          else summary[exp.paid_by] = exp.amount;
+        });
+        return summary;
+      }, [expenses, appUsers]);
+
+      const personalTotalsByPerson = useMemo(() => {
+        const summary = {};
+        expenses.filter(e => e.type === 'personal').forEach(exp => {
+          summary[exp.paid_by] = (summary[exp.paid_by] || 0) + exp.amount;
+        });
+        return summary;
+      }, [expenses]);
+
+      // --- STREAMING_CHUNK:Verifying configuration forms UI... ---
+      if (!isConfigured && !isDemoMode) {
+        return (
+          <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-8">
+              <div className="text-center mb-6">
+                <div className="bg-indigo-600/20 w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-500/30">
+                  <Icon name="coins" className="text-indigo-400 w-8 h-8" />
+                </div>
+                <h1 className="text-2xl font-black text-white">Supabase Connection</h1>
+                <p className="text-slate-400 text-xs mt-2 leading-relaxed">
+                  Connect your online Supabase credentials to save records safely on the cloud database.
+                </p>
+              </div>
+
+              {configError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-3.5 rounded-xl text-xs mb-4 flex items-center gap-2">
+                  <Icon name="alertCircle" className="w-4 h-4 text-rose-400" /> {configError}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveConfig} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Supabase Project URL</label>
+                  <input
+                    type="url"
+                    required
+                    value={supabaseConfig.url}
+                    onChange={e => setSupabaseConfig({...supabaseConfig, url: e.target.value})}
+                    placeholder="https://your-project.supabase.co"
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Supabase Anon Key</label>
+                  <input
+                    type="text"
+                    required
+                    value={supabaseConfig.key}
+                    onChange={e => setSupabaseConfig({...supabaseConfig, key: e.target.value})}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-bold text-sm transition-all shadow-lg hover:shadow-indigo-500/15">
+                  Connect Cloud Server
+                </button>
+              </form>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
+                <div className="relative flex justify-center text-xs"><span className="bg-slate-900 px-3 text-slate-500">or play offline</span></div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  setIsDemoMode(true);
+                  setIsConfigured(true);
+                  setDataLoaded(false);
+                }}
+                className="w-full bg-slate-850 hover:bg-slate-800 text-slate-300 py-3 rounded-xl font-bold text-sm transition-all border border-slate-800 flex items-center justify-center gap-2"
+              >
+                <Icon name="play" className="w-4 h-4 text-slate-300" /> Enter Sandbox Demo Playground
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // --- STREAMING_CHUNK:Developing portal authentication screen... ---
+      if (!loggedInUser) {
+        const hasAdmin = appUsers.some(u => u.role === 'admin');
+
+        return (
+          <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+            {isDemoMode && (
+              <div className="mb-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs px-4 py-2.5 rounded-xl max-w-md text-center">
+                Currently running in <strong>Demo Sandbox Mode</strong>. 
+                <button 
+                  onClick={() => {
+                    setIsConfigured(false);
+                    setIsDemoMode(false);
+                  }}
+                  className="underline font-bold ml-2 text-white hover:text-indigo-400"
+                >
+                  Connect Supabase Now
+                </button>
+              </div>
+            )}
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-br from-indigo-700 to-blue-600 p-8 text-center text-white">
+                <div className="bg-white/15 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
+                  {hasAdmin ? <Icon name="lock" className="w-8 h-8 text-white" /> : <Icon name="shield" className="w-8 h-8 text-white" />}
+                </div>
+                <h1 className="text-3xl font-extrabold tracking-tight mb-1">Trip Tracker</h1>
+                <p className="text-blue-100/90 text-sm">
+                  {hasAdmin ? "Secure Workspace Credentials" : "Admin Account Setup Needed"}
+                </p>
+              </div>
+              
+              <div className="p-8">
+                {authError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-3.5 rounded-xl text-sm mb-6 flex items-center gap-2.5">
+                    <Icon name="alertCircle" className="w-5 h-5 text-rose-400 shrink-0" /> {authError}
+                  </div>
+                )}
+
+                {!hasAdmin ? (
+                  <form onSubmit={handleSetupAdmin} className="space-y-4">
+                    <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl mb-4">
+                      <p className="text-xs text-blue-300 leading-relaxed">
+                        Create the Master Admin Credentials first. You will use these details to manage team access and verify balances in the database.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Admin Username</label>
+                      <input
+                        type="text"
+                        required
+                        value={setupForm.username}
+                        onChange={e => setSetupForm({...setupForm, username: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g. Master"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Secret Password</label>
+                      <input
+                        type="password"
+                        required
+                        value={setupForm.password}
+                        onChange={e => setSetupForm({...setupForm, password: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Create secure key"
+                      />
+                    </div>
+                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg hover:shadow-blue-500/10">
+                      Deploy Admin Account
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
+                      <input
+                        type="text"
+                        required
+                        value={loginForm.username}
+                        onChange={e => setLoginForm({...loginForm, username: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Enter assigned name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+                      <input
+                        type="password"
+                        required
+                        value={loginForm.password}
+                        onChange={e => setLoginForm({...loginForm, password: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Enter security key"
+                      />
+                    </div>
+                    <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg hover:shadow-indigo-500/10">
+                      Authenticate Securely
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- STREAMING_CHUNK:Developing main navigation app sidebar... ---
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col lg:flex-row relative overflow-hidden">
+          
+          {/* Mobile Top Header bar */}
+          <div className="lg:hidden w-full bg-slate-900 border-b border-slate-800 px-5 py-4 flex justify-between items-center z-30">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-indigo-600 p-2 rounded-xl text-white">
+                <Icon name="coins" className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="font-extrabold text-white text-base tracking-tight">Trip Tracker</h1>
+                <p className="text-[10px] text-slate-400">
+                  {isDemoMode ? "Sandbox Playroom" : "Synced to Supabase Cloud"}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="text-slate-400 hover:text-white p-1.5 bg-slate-850 rounded-xl border border-slate-800"
+            >
+              <Icon name={isSidebarOpen ? "x" : "menu"} className="w-5 h-5 text-slate-400" />
+            </button>
+          </div>
+
+          {/* Persistent left sidebar */}
+          <div className={`
+            fixed inset-y-0 left-0 z-40 w-72 bg-slate-900 border-r border-slate-800 flex flex-col justify-between transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-screen lg:z-auto
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}>
+            <div>
+              <div className="hidden lg:flex items-center gap-3 px-6 py-6 border-b border-slate-800">
+                <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-lg shadow-indigo-600/20">
+                  <Icon name="coins" className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="font-extrabold text-white text-lg tracking-tight">Trip Tracker</h1>
+                  <span className="text-xs text-indigo-400 font-medium">
+                    {isDemoMode ? "Local Sandbox" : "Supabase Cloud"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Logged in User Identity badge */}
+              <div className="p-4 mx-4 my-5 bg-slate-950/60 border border-slate-800 rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                    <Icon name="user" className="w-5 h-5 text-indigo-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-400 tracking-wider uppercase">User</p>
+                    <p className="text-sm font-bold text-white truncate">{loggedInUser.username}</p>
+                  </div>
+                </div>
+                {loggedInUser.role === 'admin' && (
+                  <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] uppercase font-bold tracking-wider px-2 py-1 rounded-md shrink-0">
+                    Admin
+                  </span>
+                )}
+              </div>
+
+              {/* Sidebar navigation items */}
+              <div className="px-4 space-y-1">
+                <button 
+                  onClick={() => { setActiveTab('group'); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${
+                    activeTab === 'group' 
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/15' 
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon name="users" className="w-[18px] h-[18px]" />
+                    <span>Shared Trip</span>
+                  </div>
+                  <Icon name="chevronRight" className={`w-4 h-4 ${activeTab === 'group' ? 'opacity-100' : 'opacity-30'}`} />
+                </button>
+
+                <button 
+                  onClick={() => { setActiveTab('personal'); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${
+                    activeTab === 'personal' 
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/15' 
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon name="wallet" className="w-[18px] h-[18px]" />
+                    <span>{loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"}</span>
+                  </div>
+                  <Icon name="chevronRight" className={`w-4 h-4 ${activeTab === 'personal' ? 'opacity-100' : 'opacity-30'}`} />
+                </button>
+
+                {loggedInUser.role === 'admin' && (
+                  <button 
+                    onClick={() => { setActiveTab('admin'); setIsSidebarOpen(false); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${
+                      activeTab === 'admin' 
+                        ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/15' 
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon name="shield" className="w-[18px] h-[18px]" />
+                      <span>Manage Access</span>
+                    </div>
+                    <Icon name="chevronRight" className={`w-4 h-4 ${activeTab === 'admin' ? 'opacity-100' : 'opacity-30'}`} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sidebar footer section */}
+            <div className="p-4 border-t border-slate-800 space-y-4">
+              {isDemoMode ? (
+                <button 
+                  onClick={() => {
+                    setIsConfigured(false);
+                    setIsDemoMode(false);
+                  }}
+                  className="w-full text-xs bg-amber-600/15 border border-amber-500/20 hover:bg-amber-600/35 text-amber-300 py-2 px-3 rounded-xl font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span>Offline Sandbox</span>
+                  <span className="underline">Connect Cloud</span>
+                </button>
+              ) : (
+                <div className="text-[10px] text-emerald-400 font-bold bg-emerald-500/5 border border-emerald-500/10 py-2 px-3 rounded-xl flex items-center gap-2">
+                  <Icon name="check" className="w-3.5 h-3.5 text-emerald-400" /> Connected to Supabase
+                </div>
+              )}
+
+              {/* Display Currency configuration */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Display Currency</label>
+                <div className="relative">
+                  <select
+                    value={viewCurrency}
+                    onChange={(e) => setViewCurrency(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold appearance-none cursor-pointer"
+                  >
+                    <option value="INR">🇮🇳 INR (₹)</option>
+                    <option value="USD">🇺🇸 USD ($)</option>
+                    <option value="EUR">🇪🇺 EUR (€)</option>
+                    <option value="GBP">🇬🇧 GBP (£)</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-500 text-[10px]">
+                    ▼
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl bg-slate-950 hover:bg-rose-950/20 border border-slate-850 hover:border-rose-900/30 text-slate-400 hover:text-rose-400 text-sm font-bold transition-all"
+              >
+                <Icon name="logout" className="w-4 h-4" /> Logout Workspace
+              </button>
+            </div>
+          </div>
+
+          {/* Sidebar backdrop overlay on mobile */}
+          {isSidebarOpen && (
+            <div 
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+            ></div>
+          )}
+
+          {/* --- STREAMING_CHUNK:Developing main right content feed... --- */}
+          <div className="flex-1 lg:h-screen lg:overflow-y-auto flex flex-col p-4 md:p-8">
+            
+            {uiError && (
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-5 py-4 rounded-2xl flex items-center gap-3 mb-6">
+                <Icon name="alertCircle" className="w-5 h-5 text-rose-400 shrink-0" />
+                <p className="text-sm font-bold">{uiError}</p>
+              </div>
+            )}
+
+            {/* Render admin profiles tab */}
+            {activeTab === 'admin' && loggedInUser.role === 'admin' && (
+              <div className="max-w-3xl mx-auto w-full space-y-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-600/10 to-amber-500/5 px-6 py-5 border-b border-slate-850">
+                    <h2 className="text-lg font-bold text-amber-400 flex items-center gap-2.5">
+                      <Icon name="userPlus" className="w-5.5 h-5.5 text-amber-400" /> Assign Friend Access Keys
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      Generate user credentials for friends below. They can sign in on their devices to log expenditures.
+                    </p>
+                  </div>
+                  <div className="p-6">
+                    <form onSubmit={handleCreateFriend} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
+                        <input
+                          type="text"
+                          required
+                          value={newFriend.username}
+                          onChange={e => setNewFriend({...newFriend, username: e.target.value})}
+                          placeholder="e.g. Alex"
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Password Key</label>
+                        <input
+                          type="text"
+                          required
+                          value={newFriend.password}
+                          onChange={e => setNewFriend({...newFriend, password: e.target.value})}
+                          placeholder="e.g. alex88"
+                          className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <button type="submit" className="w-full bg-amber-600 hover:bg-amber-500 text-white py-2.5 rounded-xl font-bold text-sm transition-all shadow-md">
+                        Generate Account
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
+                  <div className="px-6 py-5 border-b border-slate-850">
+                    <h2 className="text-base font-bold text-white">Active Accounts</h2>
+                  </div>
+                  <ul className="divide-y divide-slate-850">
+                    {appUsers.map(u => (
+                      <li key={u.id} className="p-4 sm:p-5 flex items-center justify-between hover:bg-slate-850/50 transition-colors">
+                        <div>
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-bold text-slate-200">{u.username}</span>
+                            {u.role === 'admin' && (
+                              <span className="bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md">Admin</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500 font-mono mt-1.5 flex items-center gap-1.5">
+                            <Icon name="lock" className="w-3 h-3 text-slate-500" /> {u.role === 'admin' ? '••••••••' : u.password}
+                          </div>
+                        </div>
+                        {u.role !== 'admin' && (
+                          <button 
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-slate-500 hover:text-rose-400 p-2 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-500/10"
+                          >
+                            <Icon name="trash" className="w-4.5 h-4.5" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* --- STREAMING_CHUNK:Developing transactional lists panels... --- */}
+            {activeTab !== 'admin' && (
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                
+                {/* Left controls column */}
+                <div className="xl:col-span-1 space-y-6">
+                  
+                  {/* Transaction Creator Form card */}
+                  <div className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-xl ${
+                    activeTab === 'personal' ? 'border-indigo-500/30' : 'border-blue-500/30'
+                  }`}>
+                    <div className={`px-5 py-4 border-b ${
+                      activeTab === 'personal' ? 'bg-indigo-600/10 border-indigo-500/20' : 'bg-blue-600/10 border-blue-500/20'
+                    }`}>
+                      <h2 className={`font-bold flex items-center gap-2 text-sm uppercase tracking-wide ${
+                        activeTab === 'personal' ? 'text-indigo-400' : 'text-blue-400'
+                      }`}>
+                        <Icon name="plus" className="w-4 h-4" />
+                        {activeTab === 'personal' ? 'Add Personal Expense' : 'Add Group Expense'}
+                      </h2>
+                    </div>
+
+                    <div className="p-5">
+                      <form onSubmit={handleAddExpense} className="space-y-4">
+                        {activeTab === 'group' && (
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Who paid for the group?</label>
+                            <select
+                              value={newExpense.paidBy}
+                              onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})}
+                              className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="">Select a person...</option>
+                              {appUsers.map(u => (
+                                <option key={u.id} value={u.username}>{u.username}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={newExpense.amount}
+                            onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}
+                            placeholder="0.00"
+                            className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Description</label>
+                          <input
+                            type="text"
+                            value={newExpense.description}
+                            onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
+                            placeholder={activeTab === 'group' ? "e.g. Dinner, Taxi, Hotel" : "e.g. Souvenirs, Duty free"}
+                            className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+
+                        <button 
+                          type="submit" 
+                          className={`w-full text-white py-3 rounded-xl font-bold text-sm transition-all shadow-md ${
+                            activeTab === 'personal' 
+                              ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/10' 
+                              : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/10'
+                          }`}
+                        >
+                          Save Expense
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  {/* Summary aggregate widget card */}
+                  {activeTab === 'group' ? (
+                    <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl shadow-xl overflow-hidden">
+                      <div className="p-6">
+                        <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Trip Shared Spending</h3>
+                        <p className="text-4xl font-extrabold tracking-tight text-white">{formatAmount(groupTotal)}</p>
+                        
+                        <div className="space-y-3 mt-5 pt-5 border-t border-slate-800">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Team Breakdowns</h4>
+                          {Object.entries(groupExpensesByPerson).map(([name, total]) => (
+                            <div key={name} className="flex justify-between items-center text-sm">
+                              <span className="text-slate-400">{name}</span>
+                              <span className="font-bold text-slate-200">{formatAmount(total)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-indigo-950/40 border border-indigo-900/30 text-white rounded-3xl shadow-xl overflow-hidden">
+                      <div className="p-6">
+                        <h3 className="text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-1">
+                          {loggedInUser.role === 'admin' ? "Combined Personal Spend" : "My Personal Total Spend"}
+                        </h3>
+                        <p className="text-4xl font-extrabold tracking-tight text-indigo-200">
+                          {formatAmount(loggedInUser.role === 'admin' 
+                              ? Object.values(personalTotalsByPerson).reduce((a,b)=>a+b,0) 
+                              : (personalTotalsByPerson[loggedInUser.username] || 0))}
+                        </p>
+
+                        {loggedInUser.role === 'admin' && (
+                          <div className="space-y-3 mt-5 pt-5 border-t border-indigo-900/40">
+                             <h4 className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Team Summaries</h4>
+                             {Object.entries(personalTotalsByPerson).map(([name, total]) => (
+                               <div key={name} className="flex justify-between items-center text-sm">
+                                 <span className="text-indigo-300/85">{name}</span>
+                                 <span className="font-bold text-indigo-100">{formatAmount(total)}</span>
+                               </div>
+                             ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* --- STREAMING_CHUNK:Developing central ledger activity panel... --- */}
+                {/* Central expense list feed column */}
+                <div className="xl:col-span-2">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden flex flex-col" style={{ minHeight: '500px' }}>
+                    <div className="px-6 py-5 border-b border-slate-850 flex justify-between items-center bg-slate-950/40">
+                      <h2 className="font-bold text-white text-base">
+                        {activeTab === 'personal' && loggedInUser.role === 'admin' ? "Everyone's Private Expense Feed" : "Cloud Expense Activity Ledger"}
+                      </h2>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                        activeTab === 'personal' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/15' : 'bg-blue-500/10 text-blue-400 border border-blue-500/15'
+                      }`}>
+                        {visibleExpenses.length} Records
+                      </span>
+                    </div>
+                    
+                    <div className="p-0 flex-1 overflow-y-auto">
+                      {visibleExpenses.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-500 py-24">
+                          <Icon name={activeTab === 'personal' ? "wallet" : "coins"} className="w-12 h-12 mb-4 opacity-15 text-slate-500" />
+                          <p className="text-sm">No recorded expenses found in this segment.</p>
+                        </div>
+                      ) : (
+                        <ul className="divide-y divide-slate-850">
+                          {visibleExpenses.map((expense) => (
+                            <li key={expense.id} className="p-5 hover:bg-slate-850/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
+                              <div className="flex items-start gap-4">
+                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 border ${
+                                  expense.type === 'personal' 
+                                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/15' 
+                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/15'
+                                }`}>
+                                  {expense.paid_by ? expense.paid_by.substring(0, 2) : '?'}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-slate-200 text-base">{expense.description}</p>
+                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                    <span className="text-xs text-slate-400">
+                                      {expense.type === 'personal' ? 'Bought by' : 'Paid by'} <span className="font-bold text-slate-300">{expense.paid_by}</span>
+                                    </span>
+                                    <span className="text-slate-700">•</span>
+                                    <span className="text-xs text-slate-400">{new Date(expense.timestamp).toLocaleDateString('en-IN')}</span>
+                                    
+                                    {expense.type === 'personal' && loggedInUser.role === 'admin' && (
+                                      <>
+                                        <span className="text-slate-700">•</span>
+                                        <span className="text-[9px] bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
+                                          <Icon name="eye" className="w-3 h-3 text-indigo-400" /> Private
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-15 sm:pl-0">
+                                <span className="font-extrabold text-white text-lg tracking-tight">
+                                  {formatAmount(expense.amount)}
+                                </span>
+                                
+                                {loggedInUser.role === 'admin' && (
+                                  <button
+                                    onClick={() => handleDeleteExpense(expense.id)}
+                                    className="text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-xl transition-all border border-transparent hover:border-rose-500/10 lg:opacity-0 group-hover:opacity-100"
+                                    title="Delete Expense"
+                                  >
+                                    <Icon name="trash" className="w-4.5 h-4.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // --- STREAMING_CHUNK:Mounting React application... ---
+    // Finalize rendering the compiled component to DOM
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<App />);
+  </script>
+</body>
+</html>
