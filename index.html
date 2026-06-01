@@ -1,0 +1,678 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, addDoc } from 'firebase/firestore';
+import { Trash2, UserPlus, Shield, Lock, PlusCircle, DollarSign, Users, AlertCircle, LogOut, Wallet, UserCircle, Eye } from 'lucide-react';
+
+// --- Firebase Initialization (MANDATORY PATTERN) ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+export default function App() {
+  // --- Firebase Connection State ---
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  
+  // --- Application Data State ---
+  const [appUsers, setAppUsers] = useState([]); // All registered users (admin + friends)
+  const [expenses, setExpenses] = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  
+  // --- Auth UI State ---
+  const [loggedInUser, setLoggedInUser] = useState(null); // { id, username, role }
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [setupForm, setSetupForm] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  
+  // --- Main UI State ---
+  const [activeTab, setActiveTab] = useState('group'); // 'group', 'personal', 'admin'
+  const [newExpense, setNewExpense] = useState({ amount: '', description: '', paidBy: '' });
+  const [newFriend, setNewFriend] = useState({ username: '', password: '' });
+  const [uiError, setUiError] = useState('');
+
+  // --- 1. Authentication Effect (Run once) ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setFirebaseUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 2. Data Fetching Effect (Run when firebase user exists) ---
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    // Public Paths for shared group data (Rule 1)
+    const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
+    const expensesRef = collection(db, 'artifacts', appId, 'public', 'data', 'expenses');
+
+    let usersLoaded = false;
+    let expensesLoaded = false;
+
+    const checkAllLoaded = () => {
+      if (usersLoaded && expensesLoaded) setDataLoaded(true);
+    }
+
+    // Fetch Users (for Application-Level Login)
+    const unsubUsers = onSnapshot(usersRef, (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAppUsers(usersData);
+      usersLoaded = true;
+      checkAllLoaded();
+    }, (error) => console.error("Error fetching users:", error));
+
+    // Fetch Expenses
+    const unsubExpenses = onSnapshot(expensesRef, (snapshot) => {
+      const expData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort in memory (Rule 2)
+      expData.sort((a, b) => b.timestamp - a.timestamp);
+      setExpenses(expData);
+      expensesLoaded = true;
+      checkAllLoaded();
+    }, (error) => console.error("Error fetching expenses:", error));
+
+    return () => {
+      unsubUsers();
+      unsubExpenses();
+    };
+  }, [firebaseUser]);
+
+  // --- Auth Actions ---
+  const handleSetupAdmin = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!setupForm.username || !setupForm.password) return;
+
+    try {
+      const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
+      const docRef = await addDoc(usersRef, {
+        username: setupForm.username.trim(),
+        password: setupForm.password,
+        role: 'admin',
+        createdAt: Date.now()
+      });
+      setLoggedInUser({ id: docRef.id, username: setupForm.username.trim(), role: 'admin' });
+    } catch (err) {
+      setAuthError("Failed to setup Admin account.");
+    }
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const foundUser = appUsers.find(
+      u => u.username.toLowerCase() === loginForm.username.trim().toLowerCase() && u.password === loginForm.password
+    );
+
+    if (foundUser) {
+      setLoggedInUser(foundUser);
+      setLoginForm({ username: '', password: '' });
+      setActiveTab('group');
+    } else {
+      setAuthError("Invalid username or password.");
+    }
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    setActiveTab('group');
+  };
+
+  // --- Data Actions ---
+  const handleAddExpense = async (e) => {
+    e.preventDefault();
+    
+    const amountNum = parseFloat(newExpense.amount);
+    if (!amountNum || !newExpense.description) {
+      showError("Please fill amount and description.");
+      return;
+    }
+
+    // Determine who paid based on tab
+    let payer = activeTab === 'group' ? newExpense.paidBy : loggedInUser.username;
+    if (activeTab === 'group' && !payer) {
+      showError("Please select who paid for this group expense.");
+      return;
+    }
+
+    try {
+      const expensesRef = collection(db, 'artifacts', appId, 'public', 'data', 'expenses');
+      await addDoc(expensesRef, {
+        type: activeTab === 'group' ? 'group' : 'personal',
+        amount: amountNum,
+        description: newExpense.description,
+        paidBy: payer,
+        timestamp: Date.now(),
+        addedByUid: loggedInUser.id
+      });
+      setNewExpense({ amount: '', description: '', paidBy: '' });
+    } catch (err) {
+      showError("Failed to add expense.");
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId) => {
+    if (loggedInUser.role !== 'admin') return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', expenseId));
+    } catch (err) {
+      showError("Failed to delete expense.");
+    }
+  };
+
+  const handleCreateFriend = async (e) => {
+    e.preventDefault();
+    if (loggedInUser.role !== 'admin') return;
+    if (!newFriend.username || !newFriend.password) return;
+
+    // Check if username exists
+    if (appUsers.some(u => u.username.toLowerCase() === newFriend.username.trim().toLowerCase())) {
+      showError("Username already exists!");
+      return;
+    }
+
+    try {
+      const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
+      await addDoc(usersRef, {
+        username: newFriend.username.trim(),
+        password: newFriend.password,
+        role: 'friend',
+        createdAt: Date.now()
+      });
+      setNewFriend({ username: '', password: '' });
+    } catch (err) {
+      showError("Failed to create user.");
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (loggedInUser.role !== 'admin') return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'app_users', userId));
+    } catch (err) {
+      showError("Failed to delete user.");
+    }
+  };
+
+  const showError = (msg) => {
+    setUiError(msg);
+    setTimeout(() => setUiError(''), 3000);
+  };
+
+  // --- Derived State & Calculations ---
+  
+  // Filter expenses based on current tab and user role
+  const visibleExpenses = useMemo(() => {
+    if (activeTab === 'group') {
+      return expenses.filter(e => e.type === 'group');
+    } else if (activeTab === 'personal') {
+      if (loggedInUser?.role === 'admin') {
+        // Admin sees ALL personal expenses
+        return expenses.filter(e => e.type === 'personal');
+      } else {
+        // Friend sees ONLY their personal expenses
+        return expenses.filter(e => e.type === 'personal' && e.paidBy === loggedInUser?.username);
+      }
+    }
+    return [];
+  }, [expenses, activeTab, loggedInUser]);
+
+  // Group Totals Calculation
+  const groupTotal = useMemo(() => {
+    return expenses.filter(e => e.type === 'group').reduce((sum, e) => sum + e.amount, 0);
+  }, [expenses]);
+
+  const groupExpensesByPerson = useMemo(() => {
+    const summary = {};
+    appUsers.forEach(u => summary[u.username] = 0);
+    expenses.filter(e => e.type === 'group').forEach(exp => {
+      if (summary[exp.paidBy] !== undefined) summary[exp.paidBy] += exp.amount;
+      else summary[exp.paidBy] = exp.amount;
+    });
+    return summary;
+  }, [expenses, appUsers]);
+
+  // Personal Totals Calculation
+  const personalTotalsByPerson = useMemo(() => {
+    const summary = {};
+    expenses.filter(e => e.type === 'personal').forEach(exp => {
+      summary[exp.paidBy] = (summary[exp.paidBy] || 0) + exp.amount;
+    });
+    return summary;
+  }, [expenses]);
+
+  // --- Render UI ---
+  if (!firebaseUser || !dataLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-slate-500 font-medium">Connecting to secure workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Auth Screens ---
+  if (!loggedInUser) {
+    const hasAdmin = appUsers.some(u => u.role === 'admin');
+
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="bg-blue-600 p-8 text-center text-white">
+            <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              {hasAdmin ? <Lock size={32} /> : <Shield size={32} />}
+            </div>
+            <h1 className="text-2xl font-bold mb-1">Trip Tracker</h1>
+            <p className="text-blue-100 text-sm">
+              {hasAdmin ? "Sign in to access your expenses" : "First time setup: Create Admin"}
+            </p>
+          </div>
+          
+          <div className="p-8">
+            {authError && (
+              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 flex items-center gap-2">
+                <AlertCircle size={16} /> {authError}
+              </div>
+            )}
+
+            {!hasAdmin ? (
+              <form onSubmit={handleSetupAdmin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Admin Username</label>
+                  <input
+                    type="text"
+                    required
+                    value={setupForm.username}
+                    onChange={e => setSetupForm({...setupForm, username: e.target.value})}
+                    className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-4 py-2 border"
+                    placeholder="e.g. Master"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Secret Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={setupForm.password}
+                    onChange={e => setSetupForm({...setupForm, password: e.target.value})}
+                    className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-4 py-2 border"
+                    placeholder="Create a strong password"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium transition-colors mt-4">
+                  Create Admin Account
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                  <input
+                    type="text"
+                    required
+                    value={loginForm.username}
+                    onChange={e => setLoginForm({...loginForm, username: e.target.value})}
+                    className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-4 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={loginForm.password}
+                    onChange={e => setLoginForm({...loginForm, password: e.target.value})}
+                    className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-4 py-2 border"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium transition-colors mt-4">
+                  Sign In
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Main Application Dashboard ---
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-12">
+      {/* Header & Navigation */}
+      <header className="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="bg-blue-600 p-2 rounded-lg text-white">
+              <DollarSign size={20} />
+            </div>
+            <div>
+              <h1 className="font-bold text-slate-900 leading-tight">Trip Tracker</h1>
+              <div className="flex items-center gap-1 text-xs text-slate-500 font-medium">
+                <UserCircle size={12} />
+                Logged in as <span className="text-blue-600">{loggedInUser.username}</span> 
+                {loggedInUser.role === 'admin' && <span className="bg-amber-100 text-amber-700 px-1.5 rounded ml-1">Admin</span>}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm font-medium transition-colors"
+          >
+            <LogOut size={16} /> Logout
+          </button>
+        </div>
+        
+        {/* Tab Navigation */}
+        <div className="max-w-5xl mx-auto px-4 flex overflow-x-auto no-scrollbar gap-1 mt-2 pb-2">
+          <button 
+            onClick={() => setActiveTab('group')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'group' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <Users size={18} /> Shared Trip
+          </button>
+          <button 
+            onClick={() => setActiveTab('personal')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'personal' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            <Wallet size={18} /> {loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"}
+          </button>
+          {loggedInUser.role === 'admin' && (
+            <button 
+              onClick={() => setActiveTab('admin')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'admin' ? 'bg-amber-100 text-amber-700' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <Shield size={18} /> Manage Access
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 mt-6">
+        {uiError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3 mb-6 animate-in fade-in">
+            <AlertCircle size={20} className="shrink-0" />
+            <p className="text-sm font-medium">{uiError}</p>
+          </div>
+        )}
+
+        {/* --- ADMIN TAB --- */}
+        {activeTab === 'admin' && loggedInUser.role === 'admin' && (
+          <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-amber-50 px-6 py-4 border-b border-amber-100">
+                <h2 className="font-semibold text-amber-900 flex items-center gap-2">
+                  <UserPlus size={20} /> Create User Credentials
+                </h2>
+                <p className="text-sm text-amber-700/80 mt-1">Create accounts and share these details with your friends.</p>
+              </div>
+              <div className="p-6">
+                <form onSubmit={handleCreateFriend} className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={newFriend.username}
+                      onChange={e => setNewFriend({...newFriend, username: e.target.value})}
+                      className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500 px-3 py-2 border text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Password</label>
+                    <input
+                      type="text"
+                      required
+                      value={newFriend.password}
+                      onChange={e => setNewFriend({...newFriend, password: e.target.value})}
+                      className="w-full border-slate-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500 px-3 py-2 border text-sm font-mono"
+                    />
+                  </div>
+                  <button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm h-[38px]">
+                    Create
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800">All Accounts</h2>
+              </div>
+              <ul className="divide-y divide-slate-100">
+                {appUsers.map(u => (
+                  <li key={u.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800">{u.username}</span>
+                        {u.role === 'admin' && <span className="bg-blue-100 text-blue-700 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">Admin</span>}
+                      </div>
+                      <div className="text-sm text-slate-500 font-mono mt-1 flex items-center gap-1">
+                        <Lock size={12} /> {u.role === 'admin' ? '********' : u.password}
+                      </div>
+                    </div>
+                    {u.role !== 'admin' && (
+                      <button 
+                        onClick={() => handleDeleteUser(u.id)}
+                        className="text-slate-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* --- EXPENSES TABS (Group & Personal) --- */}
+        {activeTab !== 'admin' && (
+          <div className="grid lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4">
+            
+            {/* Left Column: Form & Summary */}
+            <div className="lg:col-span-1 space-y-6">
+              
+              {/* Add Expense Form */}
+              <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${activeTab === 'personal' ? 'border-indigo-200' : 'border-blue-200'}`}>
+                <div className={`px-5 py-4 border-b ${activeTab === 'personal' ? 'bg-indigo-50 border-indigo-100' : 'bg-blue-50 border-blue-100'}`}>
+                  <h2 className={`font-semibold flex items-center gap-2 ${activeTab === 'personal' ? 'text-indigo-900' : 'text-blue-900'}`}>
+                    <PlusCircle size={18} />
+                    {activeTab === 'personal' ? 'Add Personal Expense' : 'Add Group Expense'}
+                  </h2>
+                </div>
+                <div className="p-5">
+                  <form onSubmit={handleAddExpense} className="space-y-4">
+                    {/* Only show "Paid By" dropdown for Group expenses */}
+                    {activeTab === 'group' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Who paid for the group?</label>
+                        <select
+                          value={newExpense.paidBy}
+                          onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select someone...</option>
+                          {appUsers.map(u => (
+                            <option key={u.id} value={u.username}>{u.username}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Amount ($)</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={newExpense.amount}
+                        onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}
+                        placeholder="0.00"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={newExpense.description}
+                        onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
+                        placeholder={activeTab === 'group' ? "e.g. Dinner, Taxi, Hotel" : "e.g. Souvenir, Coffee for me"}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                    <button 
+                      type="submit" 
+                      className={`w-full text-white py-2.5 rounded-lg font-medium text-sm transition-colors shadow-sm ${
+                        activeTab === 'personal' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                    >
+                      Save Expense
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Summary Cards */}
+              {activeTab === 'group' ? (
+                <div className="bg-slate-900 text-white rounded-2xl shadow-lg overflow-hidden">
+                  <div className="p-5">
+                    <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Shared Spend</h3>
+                    <p className="text-3xl font-bold mb-4">${groupTotal.toFixed(2)}</p>
+                    
+                    <div className="space-y-3 mt-4 pt-4 border-t border-slate-700">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Who Paid What</h4>
+                      {Object.entries(groupExpensesByPerson).map(([name, total]) => (
+                        <div key={name} className="flex justify-between items-center text-sm">
+                          <span>{name}</span>
+                          <span className="font-medium">${total.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-indigo-900 text-white rounded-2xl shadow-lg overflow-hidden">
+                  <div className="p-5">
+                    <h3 className="text-indigo-200 text-xs font-semibold uppercase tracking-wider mb-1">
+                      {loggedInUser.role === 'admin' ? "Total Personal Spending" : "My Personal Spending"}
+                    </h3>
+                    <p className="text-3xl font-bold mb-4">
+                      ${loggedInUser.role === 'admin' 
+                          ? Object.values(personalTotalsByPerson).reduce((a,b)=>a+b,0).toFixed(2) 
+                          : (personalTotalsByPerson[loggedInUser.username] || 0).toFixed(2)}
+                    </p>
+
+                    {loggedInUser.role === 'admin' && (
+                      <div className="space-y-3 mt-4 pt-4 border-t border-indigo-700">
+                         <h4 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">Breakdown by Person</h4>
+                         {Object.entries(personalTotalsByPerson).map(([name, total]) => (
+                           <div key={name} className="flex justify-between items-center text-sm">
+                             <span>{name}</span>
+                             <span className="font-medium">${total.toFixed(2)}</span>
+                           </div>
+                         ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Feed */}
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" style={{ minHeight: '500px' }}>
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h2 className="font-semibold text-slate-800">
+                    {activeTab === 'personal' && loggedInUser.role === 'admin' ? "All Users' Personal Expenses" : "Recent Activity"}
+                  </h2>
+                  <span className={`${activeTab === 'personal' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'} text-xs font-bold px-2.5 py-1 rounded-full`}>
+                    {visibleExpenses.length} records
+                  </span>
+                </div>
+                
+                <div className="p-0 flex-1 overflow-y-auto">
+                  {visibleExpenses.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 py-20">
+                      {activeTab === 'personal' ? <Wallet size={48} className="mb-4 opacity-20" /> : <DollarSign size={48} className="mb-4 opacity-20" />}
+                      <p>No expenses found in this category.</p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {visibleExpenses.map((expense) => (
+                        <li key={expense.id} className="p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
+                          <div className="flex items-start gap-4">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase shrink-0 ${
+                              expense.type === 'personal' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
+                            }`}>
+                              {expense.paidBy ? expense.paidBy.substring(0, 2) : '?'}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-800">{expense.description}</p>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="text-xs text-slate-500">
+                                  {expense.type === 'personal' ? 'Bought by' : 'Paid by'} <span className="font-medium text-slate-700">{expense.paidBy}</span>
+                                </span>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-xs text-slate-500">{new Date(expense.timestamp).toLocaleDateString()}</span>
+                                
+                                {expense.type === 'personal' && loggedInUser.role === 'admin' && (
+                                  <>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                                      <Eye size={10}/> Private
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-14 sm:pl-0">
+                            <span className="font-bold text-slate-800 text-lg">
+                              ${expense.amount.toFixed(2)}
+                            </span>
+                            
+                            {loggedInUser.role === 'admin' && (
+                              <button
+                                onClick={() => handleDeleteExpense(expense.id)}
+                                className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                title="Delete Expense"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
