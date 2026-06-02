@@ -59,6 +59,7 @@
             const [uiError, setUiError] = useState('');
             const [viewCurrency, setViewCurrency] = useState('INR');
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+            const [gDriveInput, setGDriveInput] = useState('');
 
             // 1. Initialize Supabase directly from hardcoded keys
             useEffect(() => {
@@ -68,7 +69,7 @@
                 }
             }, []);
 
-            // 2. Data Fetching Logic (Refactored to avoid WebSockets which are blocked in Canvas)
+            // 2. Data Fetching Logic
             const fetchData = async () => {
                 if (!supabase) return;
 
@@ -76,7 +77,6 @@
                 if (!usersErr && usersData) {
                     setAppUsers(usersData);
                     
-                    // Check local storage for persistent login
                     const savedUserId = localStorage.getItem('unimoney_user_id');
                     if (savedUserId) {
                         const foundUser = usersData.find(u => String(u.id) === String(savedUserId));
@@ -88,7 +88,6 @@
                 if (!expErr && expData) setExpenses(expData);
             };
 
-            // Fetch data initially when Supabase loads
             useEffect(() => {
                 fetchData();
             }, [supabase]);
@@ -99,7 +98,7 @@
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
                         <div className="bg-red-500/10 border border-red-500 text-red-500 p-6 rounded-2xl max-w-md w-full">
                             <h2 className="text-xl font-bold mb-2">Supabase Keys Missing!</h2>
-                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY on lines 28 and 29.</p>
+                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY.</p>
                         </div>
                     </div>
                 );
@@ -119,7 +118,7 @@
                     if (error) throw error;
                     setLoggedInUser(data[0]);
                     localStorage.setItem('unimoney_user_id', data[0].id);
-                    await fetchData(); // Refresh data after setup
+                    await fetchData();
                 } catch (err) {
                     setAuthError(err.message || "Failed to setup Admin.");
                 }
@@ -148,6 +147,61 @@
                 setIsMobileMenuOpen(false);
             };
 
+            // --- Profile Photo Upload ---
+            const handleAvatarUpload = async (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                
+                // Keep image small to save database space
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const base64String = reader.result;
+                    const { error } = await supabase.from('app_users').update({ avatar: base64String }).eq('id', loggedInUser.id);
+                    if(error) {
+                        showError("Error: Please run the SQL command to add the 'avatar' column first!");
+                    } else {
+                        await fetchData();
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+
+            // --- Trip Hub Actions ---
+            const handleSaveGDriveLink = async () => {
+                if(!gDriveInput) return;
+                await supabase.from('expenses').insert([{
+                    type: 'config_gdrive',
+                    amount: 0,
+                    description: gDriveInput,
+                    paidBy: 'system',
+                    timestamp: Date.now()
+                }]);
+                setGDriveInput('');
+                await fetchData();
+                showError("Drive link updated!");
+            };
+
+            const handleExportCSV = () => {
+                let csv = "Date,Type,Description,Paid By,Amount\n";
+                expenses.filter(e => e.type === 'group' || e.type === 'personal').forEach(e => {
+                    csv += `"${new Date(e.timestamp).toLocaleString()}","${e.type}","${e.description}","${e.paidBy || e.paid_by}","${e.amount}"\n`;
+                });
+                
+                csv += "\nSETTLEMENTS (Who Owes Who)\n";
+                settlements.forEach(s => {
+                    csv += `"${s.from}","owes","${s.to}","${s.amount}"\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('href', url);
+                a.setAttribute('download', 'UniMoney_Trip_Report.csv');
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+
             // --- Helper: Format Currency ---
             const formatAmount = (baseAmount) => {
                 const rate = EXCHANGE_RATES[viewCurrency];
@@ -172,7 +226,6 @@
                 const baseRate = EXCHANGE_RATES[viewCurrency];
                 const amountInBaseINR = amountNum / baseRate;
 
-                // FIX: Admin chooses payer, Friends are auto-selected
                 let payer = '';
                 if (activeTab === 'group') {
                     if (loggedInUser.role === 'admin') {
@@ -182,24 +235,24 @@
                         }
                         payer = newExpense.paidBy;
                     } else {
-                        payer = loggedInUser.username; // Force auto-select for friends
+                        payer = loggedInUser.username;
                     }
                 } else {
                     payer = loggedInUser.username;
                 }
 
                 try {
+                    // FIX: Removed addedByUid to fix Schema Cache Error completely
                     const { error } = await supabase.from('expenses').insert([{
                         type: activeTab === 'group' ? 'group' : 'personal',
                         amount: amountInBaseINR,
                         description: newExpense.description,
                         paidBy: payer,
-                        timestamp: Date.now(),
-                        addedByUid: String(loggedInUser.id)
+                        timestamp: Date.now()
                     }]);
                     if (error) throw error;
                     setNewExpense({ amount: '', description: '', paidBy: '' });
-                    await fetchData(); // Manually refresh data to avoid WS errors
+                    await fetchData(); 
                 } catch (err) {
                     showError(err.message || "Failed to add expense.");
                 }
@@ -208,7 +261,7 @@
             const handleDeleteExpense = async (expenseId) => {
                 if (loggedInUser.role !== 'admin') return;
                 await supabase.from('expenses').delete().eq('id', expenseId);
-                await fetchData(); // Manually refresh data to avoid WS errors
+                await fetchData(); 
             };
 
             const handleCreateFriend = async (e) => {
@@ -225,13 +278,13 @@
                     timestamp: Date.now()
                 }]);
                 setNewFriend({ username: '', password: '' });
-                await fetchData(); // Manually refresh data to avoid WS errors
+                await fetchData(); 
             };
 
             const handleDeleteUser = async (userId) => {
                 if (loggedInUser.role !== 'admin') return;
                 await supabase.from('app_users').delete().eq('id', userId);
-                await fetchData(); // Manually refresh data to avoid WS errors
+                await fetchData(); 
             };
 
             // --- Calculations & Settlements ---
@@ -239,8 +292,6 @@
                 if (activeTab === 'group') return expenses.filter(e => e.type === 'group');
                 if (activeTab === 'personal') {
                     if (loggedInUser?.role === 'admin') return expenses.filter(e => e.type === 'personal');
-                    
-                    // Use both formats for older records
                     return expenses.filter(e => e.type === 'personal' && (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username));
                 }
                 return [];
@@ -252,7 +303,6 @@
                 const summary = {};
                 appUsers.forEach(u => summary[u.username] = 0);
                 expenses.filter(e => e.type === 'group').forEach(exp => {
-                    // FIX: Check BOTH versions of the database column so old data isn't lost
                     const payerName = exp.paidBy || exp.paid_by;
                     if (summary[payerName] !== undefined) {
                         summary[payerName] += exp.amount;
@@ -261,7 +311,6 @@
                 return summary;
             }, [expenses, appUsers]);
 
-            // ADVANCED SETTLEMENT ALGORITHM ("Who Owes Who")
             const settlements = useMemo(() => {
                 if (appUsers.length === 0 || groupTotal === 0) return [];
                 const perPersonShare = groupTotal / appUsers.length;
@@ -272,13 +321,10 @@
                 appUsers.forEach(u => {
                     const paid = groupExpensesByPerson[u.username] || 0;
                     const balance = paid - perPersonShare;
-                    // If balance < 0, they paid less than their share (they owe money)
                     if (balance < -0.01) debtors.push({ name: u.username, amount: Math.abs(balance) });
-                    // If balance > 0, they paid more than their share (they get money back)
                     else if (balance > 0.01) creditors.push({ name: u.username, amount: balance });
                 });
 
-                // Sort largest amounts first for optimization
                 debtors.sort((a, b) => b.amount - a.amount);
                 creditors.sort((a, b) => b.amount - a.amount);
 
@@ -290,12 +336,7 @@
                     const creditor = creditors[j];
                     const amountToSettle = Math.min(debtor.amount, creditor.amount);
 
-                    transactions.push({
-                        from: debtor.name,
-                        to: creditor.name,
-                        amount: amountToSettle
-                    });
-
+                    transactions.push({ from: debtor.name, to: creditor.name, amount: amountToSettle });
                     debtor.amount -= amountToSettle;
                     creditor.amount -= amountToSettle;
 
@@ -304,6 +345,12 @@
                 }
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers]);
+
+            // Find current Google Drive Link
+            const activeGDriveLink = useMemo(() => {
+                const gDriveConfigs = expenses.filter(e => e.type === 'config_gdrive');
+                return gDriveConfigs.length > 0 ? gDriveConfigs[0].description : '';
+            }, [expenses]);
 
 
             // --- Auth Screens ---
@@ -362,7 +409,9 @@
                     trash: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
                     menu: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>,
                     close: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
-                    arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
+                    camera: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
+                    download: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                 };
                 return icons[name] || null;
             };
@@ -400,14 +449,24 @@
                     {/* Sidebar (Desktop & Mobile Drawer) */}
                     <aside className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-[#0b1121] border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                         
-                        {/* Profile Section */}
+                        {/* Profile Section with Photo Upload */}
                         <div className="p-6 pt-20 md:pt-6 border-b border-slate-800">
                             <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-                                <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg">
-                                    {loggedInUser.username.substring(0,2).toUpperCase()}
-                                </div>
+                                <label className="relative cursor-pointer group">
+                                    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent group-hover:border-blue-400 transition-all">
+                                        {loggedInUser.avatar ? (
+                                            <img src={loggedInUser.avatar} className="w-full h-full object-cover" alt="Profile" />
+                                        ) : (
+                                            loggedInUser.username.substring(0,2).toUpperCase()
+                                        )}
+                                    </div>
+                                    <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        {renderIcon('camera', 'w-4 h-4 text-white')}
+                                    </div>
+                                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                                </label>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">User</p>
+                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Tap pic to edit</p>
                                     <p className="font-bold text-white truncate text-lg">{loggedInUser.username}</p>
                                 </div>
                                 {loggedInUser.role === 'admin' && (
@@ -420,6 +479,7 @@
                         <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                             <NavItem id="group" icon="users" label="Shared Trip" />
                             <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} />
+                            <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" />
                             {loggedInUser.role === 'admin' && (
                                 <NavItem id="admin" icon="shield" label="Manage Access" />
                             )}
@@ -458,7 +518,43 @@
                                 </div>
                             )}
 
-                            {/* ADMIN TAB */}
+                            {/* --- TRIP HUB TAB --- */}
+                            {activeTab === 'hub' && (
+                                <div className="space-y-6">
+                                    <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
+                                        <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
+                                        <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
+                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Upload and view all the amazing photos from the trip directly in your shared Google Drive folder!</p>
+                                        
+                                        {activeGDriveLink ? (
+                                            <a href={activeGDriveLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-3 bg-white text-indigo-900 px-8 py-4 rounded-xl font-black text-lg shadow-xl shadow-indigo-900/50 hover:scale-105 transition-transform relative z-10">
+                                                {renderIcon('camera', 'w-6 h-6')} Open Google Drive Gallery
+                                            </a>
+                                        ) : (
+                                            <div className="bg-slate-900/50 p-6 rounded-xl border border-indigo-500/20 max-w-md mx-auto relative z-10 text-left">
+                                                <label className="block text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">Set Google Drive Folder Link</label>
+                                                <p className="text-xs text-slate-400 mb-4">Admin: Create a folder in Google Drive, set sharing to "Anyone with link", and paste it here for everyone to use.</p>
+                                                <div className="flex gap-2">
+                                                    <input type="text" value={gDriveInput} onChange={e => setGDriveInput(e.target.value)} placeholder="https://drive.google.com/..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none" />
+                                                    <button onClick={handleSaveGDriveLink} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold text-sm">Save</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+                                        <div>
+                                            <h3 className="text-xl font-bold text-white mb-1">Save Trip Data</h3>
+                                            <p className="text-slate-400 text-sm">Download a complete Excel/CSV report containing all expenses, totals, and "who owes who" settlements.</p>
+                                        </div>
+                                        <button onClick={handleExportCSV} className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap">
+                                            {renderIcon('download', 'w-5 h-5')} Export Total Summary
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- ADMIN TAB --- */}
                             {activeTab === 'admin' && loggedInUser.role === 'admin' && (
                                 <div className="space-y-6">
                                     <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
@@ -475,12 +571,17 @@
                                         <ul className="divide-y divide-slate-700">
                                             {appUsers.map(u => (
                                                 <li key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-800 transition-colors">
-                                                    <div>
-                                                        <p className="font-bold text-white flex items-center gap-2">
-                                                            {u.username}
-                                                            {u.role === 'admin' && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase">Admin</span>}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500 mt-1 font-mono">PWD: {u.role === 'admin' ? '********' : u.password}</p>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white overflow-hidden">
+                                                            {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover" /> : u.username.substring(0,2).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-white flex items-center gap-2">
+                                                                {u.username}
+                                                                {u.role === 'admin' && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase">Admin</span>}
+                                                            </p>
+                                                            <p className="text-xs text-slate-500 mt-1 font-mono">PWD: {u.role === 'admin' ? '********' : u.password}</p>
+                                                        </div>
                                                     </div>
                                                     {u.role !== 'admin' && (
                                                         <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-slate-500 hover:text-red-400 bg-slate-900 rounded-lg border border-slate-700 hover:border-red-500/50 transition-colors">
@@ -494,8 +595,8 @@
                                 </div>
                             )}
 
-                            {/* EXPENSE TABS */}
-                            {activeTab !== 'admin' && (
+                            {/* --- EXPENSE TABS --- */}
+                            {(activeTab === 'group' || activeTab === 'personal') && (
                                 <div className="grid xl:grid-cols-3 gap-8">
                                     
                                     {/* Left Column (Input & Summary) */}
@@ -513,7 +614,6 @@
                                                     {activeTab === 'group' && (
                                                         <div>
                                                             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Who paid?</label>
-                                                            {/* FIX: Only admin can choose, friends auto-selected */}
                                                             {loggedInUser.role === 'admin' ? (
                                                                 <select value={newExpense.paidBy} onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 text-white appearance-none">
                                                                     <option value="">Select someone...</option>
@@ -550,7 +650,7 @@
                                             <p className="text-4xl font-black text-white relative z-10">{formatAmount(groupTotal)}</p>
                                         </div>
 
-                                        {/* FIX: NEW SETTLEMENTS CALCULATOR */}
+                                        {/* SETTLEMENTS CALCULATOR */}
                                         {activeTab === 'group' && groupTotal > 0 && settlements.length > 0 && (
                                             <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl overflow-hidden">
                                                 <div className="bg-emerald-900/40 px-5 py-3 border-b border-emerald-500/20">
@@ -570,7 +670,6 @@
                                                 </div>
                                             </div>
                                         )}
-
                                     </div>
 
                                     {/* Right Column (Feed) */}
@@ -594,10 +693,10 @@
                                                 ) : (
                                                     <ul className="divide-y divide-slate-700/50">
                                                         {visibleExpenses.map((expense) => {
-                                                            // FIX: Handle both new code ('paidBy') and older database inputs ('paid_by')
                                                             const payerName = expense.paidBy || expense.paid_by || '?';
+                                                            const payerUser = appUsers.find(u => u.username === payerName);
+                                                            const avatarSrc = payerUser?.avatar;
                                                             
-                                                            // FIX: Include full Date and exact Time display
                                                             const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
                                                                 year: 'numeric', month: 'short', day: 'numeric', 
                                                                 hour: '2-digit', minute: '2-digit' 
@@ -606,8 +705,8 @@
                                                             return (
                                                                 <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
                                                                     <div className="flex items-start gap-4">
-                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg ${expense.type === 'personal' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                                                                            {payerName.substring(0, 2)}
+                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden ${expense.type === 'personal' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                                                                            {avatarSrc ? <img src={avatarSrc} className="w-full h-full object-cover" /> : payerName.substring(0, 2)}
                                                                         </div>
                                                                         <div>
                                                                             <p className="font-bold text-white text-lg">{expense.description}</p>
