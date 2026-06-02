@@ -204,10 +204,6 @@
             const handleReceiptUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                if (!apiKey) {
-                    showError("API Key required for Receipt Scanner. Add it to the code.");
-                    return;
-                }
                 
                 setIsAnalyzingReceipt(true);
                 try {
@@ -268,10 +264,7 @@
                     showError("Need some expenses to analyze first!");
                     return;
                 }
-                if (!apiKey) {
-                    showError("API Key required for AI Insights. Add it to the code.");
-                    return;
-                }
+                
                 setIsGeneratingInsights(true);
                 try {
                     const expenseSummary = expenses.map(e => `${e.paidBy || e.paid_by} spent ${e.amount} on ${e.description} (${e.type})`).join('\n');
@@ -297,7 +290,7 @@
             // --- Trip Hub Actions ---
             const handleExportCSV = () => {
                 let csv = "Date,Type,Description,Paid By,Amount\n";
-                expenses.filter(e => e.type === 'group' || e.type === 'personal').forEach(e => {
+                expenses.filter(e => e.type === 'group' || e.type === 'personal' || e.type === 'khata').forEach(e => {
                     csv += `"${new Date(e.timestamp).toLocaleString()}","${e.type}","${e.description}","${e.paidBy || e.paid_by}","${e.amount}"\n`;
                 });
                 
@@ -371,8 +364,38 @@
                 }
             };
 
+            const handleAddKhata = async (e) => {
+                e.preventDefault();
+                const amountNum = parseFloat(newExpense.amount);
+                if (!amountNum || !newExpense.description || !newExpense.paidBy) {
+                    showError("Please fill all details.");
+                    return;
+                }
+
+                const baseRate = EXCHANGE_RATES[viewCurrency];
+                const amountInBaseINR = amountNum / baseRate;
+
+                try {
+                    const { error } = await supabase.from('expenses').insert([{
+                        type: 'khata',
+                        amount: amountInBaseINR,
+                        description: newExpense.description,
+                        paid_by: newExpense.paidBy,
+                        timestamp: Date.now()
+                    }]);
+                    if (error) throw error;
+                    setNewExpense({ amount: '', description: '', paidBy: '' });
+                    await fetchData(); 
+                } catch (err) {
+                    showError(err.message || "Failed to add Khata entry.");
+                }
+            };
+
             const handleDeleteExpense = async (expenseId) => {
-                if (loggedInUser.role !== 'admin') return;
+                const expense = expenses.find(e => e.id === expenseId);
+                const isKhataOwner = expense?.type === 'khata' && ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
+                if (loggedInUser.role !== 'admin' && !isKhataOwner) return;
+                
                 await supabase.from('expenses').delete().eq('id', expenseId);
                 await fetchData(); 
             };
@@ -459,12 +482,29 @@
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers]);
 
+            // --- Khata Calculations ---
+            const isKhataEligible = ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
+            
+            const khataExpenses = useMemo(() => expenses.filter(e => e.type === 'khata'), [expenses]);
+            
+            const khataBalance = useMemo(() => {
+                let amitLent = 0;
+                let shivamLent = 0;
+                khataExpenses.forEach(e => {
+                    const payer = (e.paidBy || e.paid_by || '').toLowerCase();
+                    if (payer === 'amit') amitLent += e.amount;
+                    if (payer === 'shivam') shivamLent += e.amount;
+                });
+                return { amitLent, shivamLent, net: amitLent - shivamLent }; // +ve = Shivam owes Amit
+            }, [khataExpenses]);
+
             // --- Dynamic Themes setup ---
             const getThemeClasses = () => {
                 switch(activeTab) {
                     case 'group': return { bg: 'bg-slate-900' };
                     case 'personal': return { bg: 'bg-indigo-950' };
                     case 'hub': return { bg: 'bg-fuchsia-950' };
+                    case 'khata': return { bg: 'bg-rose-950' };
                     case 'admin': return { bg: 'bg-amber-950' };
                     default: return { bg: 'bg-slate-900' };
                 }
@@ -531,7 +571,8 @@
                     camera: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
                     download: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
                     upload: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
-                    sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+                    sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>,
+                    book: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
                 };
                 return icons[name] || null;
             };
@@ -603,6 +644,9 @@
                         <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                             <NavItem id="group" icon="users" label="Shared Trip" colorClass="bg-blue-600 shadow-lg shadow-blue-600/20" />
                             <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} colorClass="bg-indigo-600 shadow-lg shadow-indigo-600/20" />
+                            {isKhataEligible && (
+                                <NavItem id="khata" icon="book" label="Amit & Shivam Khata" colorClass="bg-rose-600 shadow-lg shadow-rose-600/20" />
+                            )}
                             <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" colorClass="bg-fuchsia-600 shadow-lg shadow-fuchsia-600/20" />
                             {loggedInUser.role === 'admin' && (
                                 <NavItem id="admin" icon="shield" label="Manage Access" colorClass="bg-amber-600 shadow-lg shadow-amber-600/20" />
@@ -898,6 +942,131 @@
                                     </div>
                                 </div>
                             )}
+
+                            {/* --- KHATA TAB (AMIT & SHIVAM ONLY) --- */}
+                            {activeTab === 'khata' && isKhataEligible && (
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+                                        <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl overflow-hidden">
+                                            <div className="p-5 border-b border-rose-500/20 bg-rose-900/40 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">
+                                                    {renderIcon('book', "w-5 h-5 text-rose-400")}
+                                                    Personal Khata Entry
+                                                </h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleAddKhata} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Who gave the money?</label>
+                                                        <select value={newExpense.paidBy} onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white appearance-none" required>
+                                                            <option value="">Select...</option>
+                                                            <option value="Amit">Amit</option>
+                                                            <option value="Shivam">Shivam</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
+                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white" required />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Note / Reason</label>
+                                                        <input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} placeholder="e.g. Movie tickets" className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white" required />
+                                                    </div>
+                                                    <button type="submit" className="w-full py-3 rounded-xl font-bold transition-all shadow-lg text-white bg-rose-600 hover:bg-rose-500 shadow-rose-500/20">
+                                                        Save to Khata
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gradient-to-br from-rose-900 to-rose-950 rounded-2xl p-6 border border-rose-500/30 shadow-xl relative overflow-hidden">
+                                            <div className="absolute -right-6 -top-6 text-rose-500/20 w-32 h-32">{renderIcon('book', 'w-full h-full')}</div>
+                                            <h3 className="text-rose-300 text-xs font-bold uppercase tracking-wider mb-2 relative z-10">Khata Status</h3>
+                                            
+                                            <div className="relative z-10 mt-4">
+                                                {khataBalance.net === 0 ? (
+                                                    <p className="text-2xl font-black text-white">All Settled Up! 🤝</p>
+                                                ) : khataBalance.net > 0 ? (
+                                                    <div>
+                                                        <p className="text-sm text-rose-200 font-medium mb-1">Shivam owes Amit</p>
+                                                        <p className="text-4xl font-black text-white">{formatAmount(Math.abs(khataBalance.net))}</p>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <p className="text-sm text-rose-200 font-medium mb-1">Amit owes Shivam</p>
+                                                        <p className="text-4xl font-black text-white">{formatAmount(Math.abs(khataBalance.net))}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column (Feed) */}
+                                    <div className="xl:col-span-2">
+                                        <div className="bg-slate-800/30 border border-rose-500/20 rounded-2xl overflow-hidden flex flex-col min-h-[500px]">
+                                            <div className="px-6 py-5 border-b border-rose-500/20 bg-rose-900/20 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">Khata Ledger</h2>
+                                                <span className="bg-rose-950 text-rose-300 text-xs font-bold px-3 py-1 rounded-full border border-rose-500/30">
+                                                    {khataExpenses.length} records
+                                                </span>
+                                            </div>
+                                            
+                                            <div className="flex-1 overflow-y-auto">
+                                                {khataExpenses.length === 0 ? (
+                                                    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
+                                                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                                                            {renderIcon('book', 'w-8 h-8 opacity-50')}
+                                                        </div>
+                                                        <p>No khata entries yet.</p>
+                                                    </div>
+                                                ) : (
+                                                    <ul className="divide-y divide-rose-500/10">
+                                                        {khataExpenses.map((expense) => {
+                                                            const payerName = expense.paidBy || expense.paid_by || '?';
+                                                            const receiverName = payerName.toLowerCase() === 'amit' ? 'Shivam' : 'Amit';
+                                                            
+                                                            const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
+                                                                year: 'numeric', month: 'short', day: 'numeric', 
+                                                                hour: '2-digit', minute: '2-digit' 
+                                                            });
+
+                                                            return (
+                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
+                                                                    <div className="flex items-start gap-4">
+                                                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                                                                            {payerName.substring(0, 2)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-bold text-white text-lg">{expense.description}</p>
+                                                                            <p className="text-xs text-rose-300 mt-1">
+                                                                                <span className="font-bold">{payerName}</span> lent to <span className="font-bold">{receiverName}</span> • {formattedDateTime}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
+                                                                        <span className="font-black text-white text-xl tracking-tight text-rose-400">
+                                                                            {formatAmount(expense.amount)}
+                                                                        </span>
+                                                                        
+                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                            {renderIcon('trash', 'w-5 h-5')}
+                                                                        </button>
+                                                                    </div>
+                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="w-full text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20 mt-2 sm:hidden text-sm font-bold flex justify-center gap-2 items-center">
+                                                                        {renderIcon('trash', 'w-4 h-4')} Delete Record
+                                                                    </button>
+                                                                </li>
+                                                            );
+                                                        })}
+                                                    </ul>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
                     </main>
                 </div>
