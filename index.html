@@ -21,6 +21,13 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        
+        /* Modern Smooth Tab Transition Animation */
+        @keyframes fadeSlideUp {
+            0% { opacity: 0; transform: translateY(15px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-tab { animation: fadeSlideUp 0.4s ease-out forwards; }
     </style>
 </head>
 <body>
@@ -28,17 +35,17 @@
 
     <script type="text/babel" data-type="module">
         // =========================================================================
-        // 🛑 IMPORTANT: PASTE YOUR SUPABASE DETAILS HERE BEFORE SAVING TO GITHUB
+        // 🛑 IMPORTANT: PASTE YOUR SUPABASE & API DETAILS HERE BEFORE SAVING
         // =========================================================================
         const SUPABASE_URL = "https://pdurzxmsjjwlhwaucakl.supabase.co"; 
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkdXJ6eG1zamp3bGh3YXVjYWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTA3ODEsImV4cCI6MjA5NTg4Njc4MX0.e4VAMmx8J7AX3Cx5N5ZRq5-RnY5b4GURzYylLSmXfSY";
-        // =========================================================================
         
-        // Gemini API Configuration
+        // Gemini API Configuration for AI Features
         const apiKey = ""; 
         
         // Hardcoded Google Drive 5TB Storage Link
         const GDRIVE_LINK = "https://drive.google.com/drive/folders/1mLGkLtoEXu9h34UHdBrP6d39UdJfHVIz?usp=drive_link";
+        // =========================================================================
 
         const { useState, useEffect, useMemo } = React;
 
@@ -123,7 +130,7 @@
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
                         <div className="bg-red-500/10 border border-red-500 text-red-500 p-6 rounded-2xl max-w-md w-full">
                             <h2 className="text-xl font-bold mb-2">Supabase Keys Missing!</h2>
-                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY on lines 28 and 29.</p>
+                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY.</p>
                         </div>
                     </div>
                 );
@@ -172,7 +179,7 @@
                 setIsMobileMenuOpen(false);
             };
 
-            // --- Profile Photo Upload ---
+            // --- Profile Photo Upload (Instant Optimistic Update) ---
             const handleAvatarUpload = async (e) => {
                 const file = e.target.files[0];
                 if(!file) return;
@@ -180,9 +187,12 @@
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64String = reader.result;
+                    // Instant UI update
+                    setLoggedInUser(prev => ({ ...prev, avatar: base64String }));
+                    
                     const { error } = await supabase.from('app_users').update({ avatar: base64String }).eq('id', loggedInUser.id);
                     if(error) {
-                        showError("Error: Please run the SQL command to add the 'avatar' column first!");
+                        showError("Error saving avatar to cloud. Make sure the 'avatar' column exists in your database.");
                     } else {
                         await fetchData();
                     }
@@ -194,6 +204,10 @@
             const handleReceiptUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
+                if (!apiKey) {
+                    showError("API Key required for Receipt Scanner. Add it to the code.");
+                    return;
+                }
                 
                 setIsAnalyzingReceipt(true);
                 try {
@@ -230,8 +244,6 @@
                         const textData = result.candidates?.[0]?.content?.parts?.[0]?.text;
                         if (textData) {
                             const parsed = JSON.parse(textData);
-                            
-                            // Convert from base currency if we are in another view
                             const rate = EXCHANGE_RATES[viewCurrency];
                             const adjustedAmount = parsed.amount ? (parsed.amount * rate).toFixed(2) : prev.amount;
 
@@ -254,6 +266,10 @@
             const handleGenerateInsights = async () => {
                 if (expenses.length === 0) {
                     showError("Need some expenses to analyze first!");
+                    return;
+                }
+                if (!apiKey) {
+                    showError("API Key required for AI Insights. Add it to the code.");
                     return;
                 }
                 setIsGeneratingInsights(true);
@@ -443,6 +459,18 @@
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers]);
 
+            // --- Dynamic Themes setup ---
+            const getThemeClasses = () => {
+                switch(activeTab) {
+                    case 'group': return { bg: 'bg-slate-900' };
+                    case 'personal': return { bg: 'bg-indigo-950' };
+                    case 'hub': return { bg: 'bg-fuchsia-950' };
+                    case 'admin': return { bg: 'bg-amber-950' };
+                    default: return { bg: 'bg-slate-900' };
+                }
+            };
+            const themeConfig = getThemeClasses();
+
             // --- Auth Screens ---
             if (!supabase) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Cloud Services...</div>;
 
@@ -508,12 +536,12 @@
                 return icons[name] || null;
             };
 
-            const NavItem = ({ id, icon, label }) => (
+            const NavItem = ({ id, icon, label, colorClass }) => (
                 <button 
                     onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                         activeTab === id 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                        ? `${colorClass} text-white` 
                         : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                     }`}
                 >
@@ -525,13 +553,17 @@
             return (
                 <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden font-sans">
                     
-                    {/* Mobile Header */}
-                    <div className="md:hidden fixed top-0 left-0 right-0 h-16 glass-panel z-40 flex justify-between items-center px-4">
-                        <div className="flex items-center gap-2 font-bold text-white">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                                {renderIcon('wallet', "w-4 h-4")}
+                    {/* Mobile Header - FIX: Small profile photo added here! */}
+                    <div className="md:hidden fixed top-0 left-0 right-0 h-16 glass-panel z-40 flex justify-between items-center px-4 border-b border-slate-800">
+                        <div className="flex items-center gap-3 font-bold text-white">
+                            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-600 bg-slate-800 flex items-center justify-center">
+                                {loggedInUser.avatar ? (
+                                    <img src={loggedInUser.avatar} className="w-full h-full object-cover" alt="Profile" />
+                                ) : (
+                                    <span className="text-xs">{loggedInUser.username.substring(0,2).toUpperCase()}</span>
+                                )}
                             </div>
-                            UniMoney
+                            <span className="tracking-tight text-lg">UniMoney</span>
                         </div>
                         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-300">
                             {isMobileMenuOpen ? renderIcon('close', 'w-6 h-6') : renderIcon('menu', 'w-6 h-6')}
@@ -541,7 +573,7 @@
                     {/* Sidebar */}
                     <aside className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-[#0b1121] border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                         
-                        {/* Profile Section */}
+                        {/* Profile Section with Photo Upload */}
                         <div className="p-6 pt-20 md:pt-6 border-b border-slate-800">
                             <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
                                 <div className="relative">
@@ -567,13 +599,13 @@
                             </div>
                         </div>
 
-                        {/* Navigation */}
+                        {/* Navigation - FIX: Added dynamic colors to the buttons! */}
                         <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
-                            <NavItem id="group" icon="users" label="Shared Trip" />
-                            <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} />
-                            <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" />
+                            <NavItem id="group" icon="users" label="Shared Trip" colorClass="bg-blue-600 shadow-lg shadow-blue-600/20" />
+                            <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} colorClass="bg-indigo-600 shadow-lg shadow-indigo-600/20" />
+                            <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" colorClass="bg-fuchsia-600 shadow-lg shadow-fuchsia-600/20" />
                             {loggedInUser.role === 'admin' && (
-                                <NavItem id="admin" icon="shield" label="Manage Access" />
+                                <NavItem id="admin" icon="shield" label="Manage Access" colorClass="bg-amber-600 shadow-lg shadow-amber-600/20" />
                             )}
                         </div>
 
@@ -599,9 +631,10 @@
                         </div>
                     </aside>
 
-                    {/* Main Content Area */}
-                    <main className="flex-1 h-full overflow-y-auto pt-16 md:pt-0 bg-[#0f172a]">
-                        <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8">
+                    {/* Main Content Area - FIX: Dynamic background added here! */}
+                    <main className={`flex-1 h-full overflow-y-auto pt-16 md:pt-0 transition-colors duration-500 ${themeConfig.bg}`}>
+                        {/* FIX: 'key' prop forces animation to replay on tab switch */}
+                        <div key={activeTab} className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 animate-tab">
                             
                             {uiError && (
                                 <div className="bg-slate-800 border border-indigo-500/50 text-indigo-400 px-4 py-3 rounded-xl flex items-center gap-3">
@@ -688,7 +721,7 @@
                                             {appUsers.map(u => (
                                                 <li key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-800 transition-colors">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white overflow-hidden">
+                                                        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white overflow-hidden border border-slate-600">
                                                             {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover" /> : u.username.substring(0,2).toUpperCase()}
                                                         </div>
                                                         <div>
