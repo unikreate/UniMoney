@@ -784,7 +784,7 @@
                                                 </form>
                                             </div>
                                             <div className="bg-indigo-900/40 p-5 border-t border-indigo-500/20 text-center">
-                                                <p className="text-xs text-indigo-200 font-bold uppercase mb-1">My Total Available Funds</p>
+                                                <p className="text-xs text-indigo-200 font-bold uppercase mb-1">My Total Personal Funds (Cash + A/C)</p>
                                                 <p className="text-2xl font-black text-white">{formatAmount((parseFloat(personalBalances.cash||0) + parseFloat(personalBalances.account||0)))}</p>
                                             </div>
                                         </div>
@@ -1085,10 +1085,30 @@
                                                     </form>
                                                 )}
                                             </div>
+                                            
+                                            <div className="bg-violet-900/40 p-5 border-t border-violet-500/20 text-center">
+                                                <p className="text-xs text-violet-200 font-bold uppercase mb-1">Total Business Funds (Cash + A/C)</p>
+                                                <p className="text-2xl font-black text-white">{formatAmount((parseFloat(bizBalances.cash || 0) + parseFloat(bizBalances.account || 0)))}</p>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="xl:col-span-2 space-y-6">
+                                        
+                                        <div className="bg-gradient-to-r from-blue-900/50 to-violet-900/50 p-6 rounded-2xl border border-blue-500/30 shadow-xl flex justify-between items-center relative overflow-hidden">
+                                            <div className="absolute -right-10 -bottom-10 text-white/5 w-48 h-48">{renderIcon('wallet', 'w-full h-full')}</div>
+                                            <div className="relative z-10">
+                                                <p className="text-xs font-bold text-blue-300 uppercase mb-1 tracking-wider">My Total Combined Wealth</p>
+                                                <p className="text-sm text-slate-300 mb-3">Personal (Cash + A/C) + Business (Cash + A/C)</p>
+                                                <p className="text-4xl font-black text-white">
+                                                    {formatAmount(
+                                                        (parseFloat(personalBalances.cash||0) + parseFloat(personalBalances.account||0)) + 
+                                                        (parseFloat(bizBalances.cash||0) + parseFloat(bizBalances.account||0))
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center">
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Revenue</p>
