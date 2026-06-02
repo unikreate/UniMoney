@@ -84,6 +84,7 @@
                     }
                 }
 
+                // Supabase doesn't support WebSocket well on Canvas, manual fetch is safer
                 const { data: expData, error: expErr } = await supabase.from('expenses').select('*').order('timestamp', { ascending: false });
                 if (!expErr && expData) setExpenses(expData);
             };
@@ -98,7 +99,7 @@
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
                         <div className="bg-red-500/10 border border-red-500 text-red-500 p-6 rounded-2xl max-w-md w-full">
                             <h2 className="text-xl font-bold mb-2">Supabase Keys Missing!</h2>
-                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY.</p>
+                            <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY on lines 28 and 29.</p>
                         </div>
                     </div>
                 );
@@ -113,7 +114,7 @@
                         username: setupForm.username.trim(),
                         password: setupForm.password,
                         role: 'admin',
-                        timestamp: Date.now()
+                        created_at: Date.now() // MATCHES DB SCHEMA
                     }]).select();
                     if (error) throw error;
                     setLoggedInUser(data[0]);
@@ -173,7 +174,7 @@
                     type: 'config_gdrive',
                     amount: 0,
                     description: gDriveInput,
-                    paidBy: 'system',
+                    paid_by: 'system', // MATCHES DB SCHEMA
                     timestamp: Date.now()
                 }]);
                 setGDriveInput('');
@@ -242,12 +243,12 @@
                 }
 
                 try {
-                    // FIX: Removed addedByUid to fix Schema Cache Error completely
+                    // FIX: Replaced 'paidBy' with 'paid_by' to match database Schema Cache!
                     const { error } = await supabase.from('expenses').insert([{
                         type: activeTab === 'group' ? 'group' : 'personal',
                         amount: amountInBaseINR,
                         description: newExpense.description,
-                        paidBy: payer,
+                        paid_by: payer,
                         timestamp: Date.now()
                     }]);
                     if (error) throw error;
@@ -275,7 +276,7 @@
                     username: newFriend.username.trim(),
                     password: newFriend.password,
                     role: 'friend',
-                    timestamp: Date.now()
+                    created_at: Date.now() // MATCHES DB SCHEMA
                 }]);
                 setNewFriend({ username: '', password: '' });
                 await fetchData(); 
