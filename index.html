@@ -33,12 +33,33 @@
         const SUPABASE_URL = "https://pdurzxmsjjwlhwaucakl.supabase.co"; 
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkdXJ6eG1zamp3bGh3YXVjYWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTA3ODEsImV4cCI6MjA5NTg4Njc4MX0.e4VAMmx8J7AX3Cx5N5ZRq5-RnY5b4GURzYylLSmXfSY";
         // =========================================================================
+        
+        // Gemini API Configuration
+        const apiKey = ""; 
+        
+        // Hardcoded Google Drive 5TB Storage Link
+        const GDRIVE_LINK = "https://drive.google.com/drive/folders/1mLGkLtoEXu9h34UHdBrP6d39UdJfHVIz?usp=drive_link";
 
         const { useState, useEffect, useMemo } = React;
 
         // Exchange rates (Base INR)
         const EXCHANGE_RATES = { INR: 1, USD: 0.012, EUR: 0.011, GBP: 0.0095 };
         const CURRENCY_SYMBOLS = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+
+        // Helper for API calls with Exponential Backoff
+        const fetchWithRetry = async (url, options) => {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i < 5; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return await response.json();
+                } catch (error) {
+                    if (i === 4) throw error;
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        };
 
         function App() {
             // Check if user has pasted keys
@@ -59,7 +80,11 @@
             const [uiError, setUiError] = useState('');
             const [viewCurrency, setViewCurrency] = useState('INR');
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-            const [gDriveInput, setGDriveInput] = useState('');
+            
+            // AI States
+            const [isAnalyzingReceipt, setIsAnalyzingReceipt] = useState(false);
+            const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
+            const [aiInsights, setAiInsights] = useState("");
 
             // 1. Initialize Supabase directly from hardcoded keys
             useEffect(() => {
@@ -84,7 +109,6 @@
                     }
                 }
 
-                // Supabase doesn't support WebSocket well on Canvas, manual fetch is safer
                 const { data: expData, error: expErr } = await supabase.from('expenses').select('*').order('timestamp', { ascending: false });
                 if (!expErr && expData) setExpenses(expData);
             };
@@ -114,7 +138,7 @@
                         username: setupForm.username.trim(),
                         password: setupForm.password,
                         role: 'admin',
-                        created_at: Date.now() // MATCHES DB SCHEMA
+                        created_at: Date.now()
                     }]).select();
                     if (error) throw error;
                     setLoggedInUser(data[0]);
@@ -153,7 +177,6 @@
                 const file = e.target.files[0];
                 if(!file) return;
                 
-                // Keep image small to save database space
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64String = reader.result;
@@ -167,21 +190,95 @@
                 reader.readAsDataURL(file);
             };
 
-            // --- Trip Hub Actions ---
-            const handleSaveGDriveLink = async () => {
-                if(!gDriveInput) return;
-                await supabase.from('expenses').insert([{
-                    type: 'config_gdrive',
-                    amount: 0,
-                    description: gDriveInput,
-                    paid_by: 'system', // MATCHES DB SCHEMA
-                    timestamp: Date.now()
-                }]);
-                setGDriveInput('');
-                await fetchData();
-                showError("Drive link updated!");
+            // --- Gemini AI Actions ---
+            const handleReceiptUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                setIsAnalyzingReceipt(true);
+                try {
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                        const base64Data = reader.result.split(',')[1];
+                        const mimeType = file.type;
+                        const prompt = "Analyze this receipt. Extract the total amount and a short description (like 'Dinner at Restaurant' or 'Gas Station'). Return ONLY valid JSON with 'amount' (number) and 'description' (string) fields.";
+                        
+                        const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{
+                                    role: "user",
+                                    parts: [
+                                        { text: prompt },
+                                        { inlineData: { mimeType, data: base64Data } }
+                                    ]
+                                }],
+                                generationConfig: {
+                                    responseMimeType: "application/json",
+                                    responseSchema: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            amount: { type: "NUMBER" },
+                                            description: { type: "STRING" }
+                                        }
+                                    }
+                                }
+                            })
+                        });
+
+                        const textData = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (textData) {
+                            const parsed = JSON.parse(textData);
+                            
+                            // Convert from base currency if we are in another view
+                            const rate = EXCHANGE_RATES[viewCurrency];
+                            const adjustedAmount = parsed.amount ? (parsed.amount * rate).toFixed(2) : prev.amount;
+
+                            setNewExpense(prev => ({
+                                ...prev,
+                                amount: adjustedAmount,
+                                description: parsed.description || prev.description
+                            }));
+                            showError("✨ Receipt analyzed successfully! Verify details below.");
+                        }
+                        setIsAnalyzingReceipt(false);
+                    };
+                    reader.readAsDataURL(file);
+                } catch (err) {
+                    showError("Failed to analyze receipt. Ensure it's a clear image.");
+                    setIsAnalyzingReceipt(false);
+                }
             };
 
+            const handleGenerateInsights = async () => {
+                if (expenses.length === 0) {
+                    showError("Need some expenses to analyze first!");
+                    return;
+                }
+                setIsGeneratingInsights(true);
+                try {
+                    const expenseSummary = expenses.map(e => `${e.paidBy || e.paid_by} spent ${e.amount} on ${e.description} (${e.type})`).join('\n');
+                    const prompt = `You are a fun, witty financial advisor. Here is a list of travel expenses for our group trip:\n${expenseSummary}\n\nProvide a short, entertaining summary (max 3 short paragraphs) of our spending habits. Point out who spent the most, what our weirdest or biggest expenses are, and give us a funny financial rating at the end. Use emojis!`;
+                    
+                    const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }]
+                        })
+                    });
+                    
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) setAiInsights(text);
+                } catch (err) {
+                    showError("Failed to generate AI insights.");
+                } finally {
+                    setIsGeneratingInsights(false);
+                }
+            };
+
+            // --- Trip Hub Actions ---
             const handleExportCSV = () => {
                 let csv = "Date,Type,Description,Paid By,Amount\n";
                 expenses.filter(e => e.type === 'group' || e.type === 'personal').forEach(e => {
@@ -243,7 +340,6 @@
                 }
 
                 try {
-                    // FIX: Replaced 'paidBy' with 'paid_by' to match database Schema Cache!
                     const { error } = await supabase.from('expenses').insert([{
                         type: activeTab === 'group' ? 'group' : 'personal',
                         amount: amountInBaseINR,
@@ -276,7 +372,7 @@
                     username: newFriend.username.trim(),
                     password: newFriend.password,
                     role: 'friend',
-                    created_at: Date.now() // MATCHES DB SCHEMA
+                    created_at: Date.now()
                 }]);
                 setNewFriend({ username: '', password: '' });
                 await fetchData(); 
@@ -347,13 +443,6 @@
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers]);
 
-            // Find current Google Drive Link
-            const activeGDriveLink = useMemo(() => {
-                const gDriveConfigs = expenses.filter(e => e.type === 'config_gdrive');
-                return gDriveConfigs.length > 0 ? gDriveConfigs[0].description : '';
-            }, [expenses]);
-
-
             // --- Auth Screens ---
             if (!supabase) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Cloud Services...</div>;
 
@@ -412,7 +501,9 @@
                     close: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
                     arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
                     camera: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
-                    download: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    download: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
+                    upload: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
+                    sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
                 };
                 return icons[name] || null;
             };
@@ -447,27 +538,27 @@
                         </button>
                     </div>
 
-                    {/* Sidebar (Desktop & Mobile Drawer) */}
+                    {/* Sidebar */}
                     <aside className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-[#0b1121] border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                         
-                        {/* Profile Section with Photo Upload */}
+                        {/* Profile Section */}
                         <div className="p-6 pt-20 md:pt-6 border-b border-slate-800">
                             <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-                                <label className="relative cursor-pointer group">
-                                    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent group-hover:border-blue-400 transition-all">
+                                <div className="relative">
+                                    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent">
                                         {loggedInUser.avatar ? (
                                             <img src={loggedInUser.avatar} className="w-full h-full object-cover" alt="Profile" />
                                         ) : (
                                             loggedInUser.username.substring(0,2).toUpperCase()
                                         )}
                                     </div>
-                                    <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                        {renderIcon('camera', 'w-4 h-4 text-white')}
-                                    </div>
-                                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                                </label>
+                                    <label className="absolute -bottom-1 -right-1 bg-slate-700 hover:bg-indigo-500 border border-slate-600 hover:border-indigo-400 rounded-full p-1.5 cursor-pointer transition-all shadow-lg z-10" title="Upload Profile Photo">
+                                        {renderIcon('camera', 'w-3 h-3 text-white')}
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                                    </label>
+                                </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Tap pic to edit</p>
+                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Profile</p>
                                     <p className="font-bold text-white truncate text-lg">{loggedInUser.username}</p>
                                 </div>
                                 {loggedInUser.role === 'admin' && (
@@ -513,8 +604,8 @@
                         <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8">
                             
                             {uiError && (
-                                <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-xl flex items-center gap-3">
-                                    {renderIcon('shield', "w-5 h-5")}
+                                <div className="bg-slate-800 border border-indigo-500/50 text-indigo-400 px-4 py-3 rounded-xl flex items-center gap-3">
+                                    {renderIcon('sparkles', "w-5 h-5")}
                                     <p className="text-sm font-medium">{uiError}</p>
                                 </div>
                             )}
@@ -525,22 +616,46 @@
                                     <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
                                         <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
                                         <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
-                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Upload and view all the amazing photos from the trip directly in your shared Google Drive folder!</p>
+                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Access our 5TB shared Google Drive! You can instantly upload your photos and videos, or download the full trip collection.</p>
                                         
-                                        {activeGDriveLink ? (
-                                            <a href={activeGDriveLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-3 bg-white text-indigo-900 px-8 py-4 rounded-xl font-black text-lg shadow-xl shadow-indigo-900/50 hover:scale-105 transition-transform relative z-10">
-                                                {renderIcon('camera', 'w-6 h-6')} Open Google Drive Gallery
+                                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
+                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-600/20">
+                                                {renderIcon('upload', 'w-5 h-5')} Upload Media
                                             </a>
-                                        ) : (
-                                            <div className="bg-slate-900/50 p-6 rounded-xl border border-indigo-500/20 max-w-md mx-auto relative z-10 text-left">
-                                                <label className="block text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">Set Google Drive Folder Link</label>
-                                                <p className="text-xs text-slate-400 mb-4">Admin: Create a folder in Google Drive, set sharing to "Anyone with link", and paste it here for everyone to use.</p>
-                                                <div className="flex gap-2">
-                                                    <input type="text" value={gDriveInput} onChange={e => setGDriveInput(e.target.value)} placeholder="https://drive.google.com/..." className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:border-indigo-500 outline-none" />
-                                                    <button onClick={handleSaveGDriveLink} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold text-sm">Save</button>
-                                                </div>
+                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-8 py-4 rounded-xl font-bold text-sm transition-all shadow-lg">
+                                                {renderIcon('camera', 'w-5 h-5')} View & Download
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    {/* AI Insights Card */}
+                                    <div className="bg-gradient-to-r from-fuchsia-900/40 to-purple-900/40 border border-fuchsia-500/30 rounded-2xl p-8 relative overflow-hidden">
+                                        <div className="absolute -left-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('sparkles', 'w-full h-full')}</div>
+                                        <div className="flex flex-col md:flex-row gap-6 relative z-10">
+                                            <div className="flex-1">
+                                                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                                                    {renderIcon('sparkles', 'w-6 h-6 text-fuchsia-400')}
+                                                    AI Financial Advisor
+                                                </h3>
+                                                <p className="text-fuchsia-200 text-sm mb-4">Let Gemini AI analyze your trip expenses and give you a fun, witty breakdown of your group's spending habits!</p>
+                                                
+                                                {aiInsights ? (
+                                                    <div className="space-y-3 mt-6 bg-slate-900/50 p-6 rounded-xl border border-fuchsia-500/20 text-slate-300 text-sm leading-relaxed">
+                                                        {aiInsights.split('\n').map((para, idx) => (
+                                                            <p key={idx}>{para}</p>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <button 
+                                                        onClick={handleGenerateInsights} 
+                                                        disabled={isGeneratingInsights}
+                                                        className="flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-fuchsia-600/20"
+                                                    >
+                                                        {isGeneratingInsights ? "✨ Analyzing Data..." : "✨ Generate Trip Insights"}
+                                                    </button>
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
 
                                     <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -604,11 +719,18 @@
                                     <div className="xl:col-span-1 space-y-6">
                                         
                                         <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
                                                 <h2 className="font-bold text-white flex items-center gap-2">
                                                     {renderIcon('plus', "w-5 h-5 text-blue-400")}
                                                     {activeTab === 'personal' ? 'Add Personal Expense' : 'Add Group Expense'}
                                                 </h2>
+                                                
+                                                {/* Gemini Vision Receipt Scanner Button */}
+                                                <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isAnalyzingReceipt ? 'bg-indigo-500/20 text-indigo-300 cursor-wait' : 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 border border-indigo-500/30'}`}>
+                                                    {renderIcon('sparkles', 'w-3 h-3')}
+                                                    {isAnalyzingReceipt ? 'Analyzing...' : 'Scan Receipt'}
+                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleReceiptUpload} disabled={isAnalyzingReceipt} />
+                                                </label>
                                             </div>
                                             <div className="p-5">
                                                 <form onSubmit={handleAddExpense} className="space-y-4">
