@@ -88,6 +88,14 @@
             const [viewCurrency, setViewCurrency] = useState('INR');
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
             
+            // New Khata Form State
+            const [khataForm, setKhataForm] = useState({
+                mode: 'take', // 'take' or 'give'
+                name: '',
+                amount: '',
+                date: new Date().toISOString().split('T')[0]
+            });
+            
             // AI States
             const [isAnalyzingReceipt, setIsAnalyzingReceipt] = useState(false);
             const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
@@ -366,25 +374,28 @@
 
             const handleAddKhata = async (e) => {
                 e.preventDefault();
-                const amountNum = parseFloat(newExpense.amount);
-                if (!amountNum || !newExpense.description || !newExpense.paidBy) {
-                    showError("Please fill all details.");
+                const amountNum = parseFloat(khataForm.amount);
+                if (!amountNum || !khataForm.name) {
+                    showError("Please fill name and amount.");
                     return;
                 }
 
                 const baseRate = EXCHANGE_RATES[viewCurrency];
                 const amountInBaseINR = amountNum / baseRate;
+                
+                // Parse local date strictly to timestamp
+                const timestamp = new Date(khataForm.date).getTime();
 
                 try {
                     const { error } = await supabase.from('expenses').insert([{
-                        type: 'khata',
+                        type: khataForm.mode === 'take' ? 'khata_take' : 'khata_give',
                         amount: amountInBaseINR,
-                        description: newExpense.description,
-                        paid_by: newExpense.paidBy,
-                        timestamp: Date.now()
+                        description: khataForm.name,
+                        paid_by: loggedInUser.username,
+                        timestamp: timestamp || Date.now()
                     }]);
                     if (error) throw error;
-                    setNewExpense({ amount: '', description: '', paidBy: '' });
+                    setKhataForm({ ...khataForm, name: '', amount: '' });
                     await fetchData(); 
                 } catch (err) {
                     showError(err.message || "Failed to add Khata entry.");
@@ -393,7 +404,8 @@
 
             const handleDeleteExpense = async (expenseId) => {
                 const expense = expenses.find(e => e.id === expenseId);
-                const isKhataOwner = expense?.type === 'khata' && ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
+                const isKhataOwner = (expense?.type === 'khata_take' || expense?.type === 'khata_give' || expense?.type === 'khata') && (expense.paidBy === loggedInUser?.username || expense.paid_by === loggedInUser?.username);
+                
                 if (loggedInUser.role !== 'admin' && !isKhataOwner) return;
                 
                 await supabase.from('expenses').delete().eq('id', expenseId);
@@ -427,8 +439,10 @@
             const visibleExpenses = useMemo(() => {
                 if (activeTab === 'group') return expenses.filter(e => e.type === 'group');
                 if (activeTab === 'personal') {
-                    if (loggedInUser?.role === 'admin') return expenses.filter(e => e.type === 'personal');
                     return expenses.filter(e => e.type === 'personal' && (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username));
+                }
+                if (activeTab === 'all_personal' && loggedInUser?.role === 'admin') {
+                    return expenses.filter(e => e.type === 'personal');
                 }
                 return [];
             }, [expenses, activeTab, loggedInUser]);
@@ -485,26 +499,31 @@
             // --- Khata Calculations ---
             const isKhataEligible = ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
             
-            const khataExpenses = useMemo(() => expenses.filter(e => e.type === 'khata'), [expenses]);
+            const myKhataExpenses = useMemo(() => {
+                return expenses.filter(e => 
+                    (e.type === 'khata_take' || e.type === 'khata_give' || e.type === 'khata') && 
+                    (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username)
+                );
+            }, [expenses, loggedInUser]);
             
-            const khataBalance = useMemo(() => {
-                let amitLent = 0;
-                let shivamLent = 0;
-                khataExpenses.forEach(e => {
-                    const payer = (e.paidBy || e.paid_by || '').toLowerCase();
-                    if (payer === 'amit') amitLent += e.amount;
-                    if (payer === 'shivam') shivamLent += e.amount;
+            const khataTotals = useMemo(() => {
+                let take = 0;
+                let give = 0;
+                myKhataExpenses.forEach(e => {
+                    if (e.type === 'khata_take') take += e.amount;
+                    if (e.type === 'khata_give') give += e.amount;
                 });
-                return { amitLent, shivamLent, net: amitLent - shivamLent }; // +ve = Shivam owes Amit
-            }, [khataExpenses]);
+                return { take, give, net: take - give }; // +ve = Overall you take, -ve = Overall you give
+            }, [myKhataExpenses]);
 
             // --- Dynamic Themes setup ---
             const getThemeClasses = () => {
                 switch(activeTab) {
                     case 'group': return { bg: 'bg-slate-900' };
                     case 'personal': return { bg: 'bg-indigo-950' };
+                    case 'all_personal': return { bg: 'bg-cyan-950' };
                     case 'hub': return { bg: 'bg-fuchsia-950' };
-                    case 'khata': return { bg: 'bg-rose-950' };
+                    case 'khata': return { bg: 'bg-emerald-950' };
                     case 'admin': return { bg: 'bg-amber-950' };
                     default: return { bg: 'bg-slate-900' };
                 }
@@ -643,9 +662,12 @@
                         {/* Navigation - FIX: Added dynamic colors to the buttons! */}
                         <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                             <NavItem id="group" icon="users" label="Shared Trip" colorClass="bg-blue-600 shadow-lg shadow-blue-600/20" />
-                            <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} colorClass="bg-indigo-600 shadow-lg shadow-indigo-600/20" />
+                            <NavItem id="personal" icon="wallet" label="My Personal" colorClass="bg-indigo-600 shadow-lg shadow-indigo-600/20" />
+                            {loggedInUser.role === 'admin' && (
+                                <NavItem id="all_personal" icon="users" label="All Users' Personal" colorClass="bg-cyan-600 shadow-lg shadow-cyan-600/20" />
+                            )}
                             {isKhataEligible && (
-                                <NavItem id="khata" icon="book" label="Amit & Shivam Khata" colorClass="bg-rose-600 shadow-lg shadow-rose-600/20" />
+                                <NavItem id="khata" icon="book" label="My Khata" colorClass="bg-emerald-600 shadow-lg shadow-emerald-600/20" />
                             )}
                             <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" colorClass="bg-fuchsia-600 shadow-lg shadow-fuchsia-600/20" />
                             {loggedInUser.role === 'admin' && (
@@ -789,7 +811,7 @@
                             )}
 
                             {/* --- EXPENSE TABS --- */}
-                            {(activeTab === 'group' || activeTab === 'personal') && (
+                            {(activeTab === 'group' || activeTab === 'personal' || activeTab === 'all_personal') && (
                                 <div className="grid xl:grid-cols-3 gap-8">
                                     
                                     {/* Left Column (Input & Summary) */}
@@ -799,7 +821,7 @@
                                             <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
                                                 <h2 className="font-bold text-white flex items-center gap-2">
                                                     {renderIcon('plus', "w-5 h-5 text-blue-400")}
-                                                    {activeTab === 'personal' ? 'Add Personal Expense' : 'Add Group Expense'}
+                                                    {activeTab === 'group' ? 'Add Group Expense' : 'Add Personal Expense'}
                                                 </h2>
                                                 
                                                 {/* Gemini Vision Receipt Scanner Button */}
@@ -946,107 +968,129 @@
                             {/* --- KHATA TAB (AMIT & SHIVAM ONLY) --- */}
                             {activeTab === 'khata' && isKhataEligible && (
                                 <div className="grid xl:grid-cols-3 gap-8">
+                                    {/* Left Column (Input & Summary) */}
                                     <div className="xl:col-span-1 space-y-6">
-                                        <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl overflow-hidden">
-                                            <div className="p-5 border-b border-rose-500/20 bg-rose-900/40 flex justify-between items-center">
+                                        <div className="bg-slate-800/50 border border-emerald-500/30 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
                                                 <h2 className="font-bold text-white flex items-center gap-2">
-                                                    {renderIcon('book', "w-5 h-5 text-rose-400")}
-                                                    Personal Khata Entry
+                                                    {renderIcon('book', "w-5 h-5 text-emerald-400")}
+                                                    My Personal Khata
                                                 </h2>
                                             </div>
                                             <div className="p-5">
                                                 <form onSubmit={handleAddKhata} className="space-y-4">
-                                                    <div>
-                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Who gave the money?</label>
-                                                        <select value={newExpense.paidBy} onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white appearance-none" required>
-                                                            <option value="">Select...</option>
-                                                            <option value="Amit">Amit</option>
-                                                            <option value="Shivam">Shivam</option>
-                                                        </select>
+                                                    
+                                                    {/* I Take / I Give Toggles */}
+                                                    <div className="flex gap-3 mb-6">
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setKhataForm({...khataForm, mode: 'take'})}
+                                                            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${khataForm.mode === 'take' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-lg shadow-emerald-500/10' : 'bg-slate-900 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+                                                        >
+                                                            I Take
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setKhataForm({...khataForm, mode: 'give'})}
+                                                            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${khataForm.mode === 'give' ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 shadow-lg shadow-rose-500/10' : 'bg-slate-900 text-slate-500 border-slate-700 hover:text-slate-300'}`}
+                                                        >
+                                                            I Give
+                                                        </button>
                                                     </div>
+
                                                     <div>
-                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
-                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white" required />
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Name</label>
+                                                        <input type="text" value={khataForm.name} onChange={(e) => setKhataForm({...khataForm, name: e.target.value})} placeholder="Person's name..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-xs font-semibold text-rose-300 uppercase tracking-wider mb-2">Note / Reason</label>
-                                                        <input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} placeholder="e.g. Movie tickets" className="w-full bg-slate-900 border border-rose-500/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-500 text-white" required />
+                                                    
+                                                    <div className="flex gap-4">
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
+                                                            <input type="number" min="0.01" step="0.01" value={khataForm.amount} onChange={(e) => setKhataForm({...khataForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Date</label>
+                                                            <input type="date" value={khataForm.date} onChange={(e) => setKhataForm({...khataForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
+                                                        </div>
                                                     </div>
-                                                    <button type="submit" className="w-full py-3 rounded-xl font-bold transition-all shadow-lg text-white bg-rose-600 hover:bg-rose-500 shadow-rose-500/20">
-                                                        Save to Khata
+
+                                                    <button type="submit" className={`w-full py-3 mt-4 rounded-xl font-bold transition-all shadow-lg text-white ${khataForm.mode === 'take' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20' : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'}`}>
+                                                        Save Due
                                                     </button>
                                                 </form>
                                             </div>
                                         </div>
 
-                                        <div className="bg-gradient-to-br from-rose-900 to-rose-950 rounded-2xl p-6 border border-rose-500/30 shadow-xl relative overflow-hidden">
-                                            <div className="absolute -right-6 -top-6 text-rose-500/20 w-32 h-32">{renderIcon('book', 'w-full h-full')}</div>
-                                            <h3 className="text-rose-300 text-xs font-bold uppercase tracking-wider mb-2 relative z-10">Khata Status</h3>
+                                        {/* Khata Summary */}
+                                        <div className="bg-gradient-to-br from-emerald-900 to-emerald-950 rounded-2xl p-6 border border-emerald-500/30 shadow-xl relative overflow-hidden">
+                                            <div className="absolute -right-6 -top-6 text-emerald-500/20 w-32 h-32">{renderIcon('book', 'w-full h-full')}</div>
+                                            <h3 className="text-emerald-300 text-xs font-bold uppercase tracking-wider mb-4 relative z-10">Your Khata Summary</h3>
                                             
-                                            <div className="relative z-10 mt-4">
-                                                {khataBalance.net === 0 ? (
-                                                    <p className="text-2xl font-black text-white">All Settled Up! 🤝</p>
-                                                ) : khataBalance.net > 0 ? (
-                                                    <div>
-                                                        <p className="text-sm text-rose-200 font-medium mb-1">Shivam owes Amit</p>
-                                                        <p className="text-4xl font-black text-white">{formatAmount(Math.abs(khataBalance.net))}</p>
-                                                    </div>
-                                                ) : (
-                                                    <div>
-                                                        <p className="text-sm text-rose-200 font-medium mb-1">Amit owes Shivam</p>
-                                                        <p className="text-4xl font-black text-white">{formatAmount(Math.abs(khataBalance.net))}</p>
-                                                    </div>
-                                                )}
+                                            <div className="relative z-10 space-y-4">
+                                                <div className="flex justify-between items-center pb-3 border-b border-emerald-500/20">
+                                                    <span className="text-emerald-100/70 font-medium text-sm">Total I Take:</span>
+                                                    <span className="text-lg font-black text-emerald-400">{formatAmount(khataTotals.take)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center pb-3 border-b border-emerald-500/20">
+                                                    <span className="text-emerald-100/70 font-medium text-sm">Total I Give:</span>
+                                                    <span className="text-lg font-black text-rose-400">{formatAmount(khataTotals.give)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-1">
+                                                    <span className="text-white font-bold text-sm">Net Balance:</span>
+                                                    <span className={`text-2xl font-black ${khataTotals.net >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                                                        {khataTotals.net >= 0 ? `+${formatAmount(khataTotals.net)}` : `-${formatAmount(Math.abs(khataTotals.net))}`}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Right Column (Feed) */}
+                                    {/* Right Column (Khata Feed) */}
                                     <div className="xl:col-span-2">
-                                        <div className="bg-slate-800/30 border border-rose-500/20 rounded-2xl overflow-hidden flex flex-col min-h-[500px]">
-                                            <div className="px-6 py-5 border-b border-rose-500/20 bg-rose-900/20 flex justify-between items-center">
+                                        <div className="bg-slate-800/30 border border-emerald-500/20 rounded-2xl overflow-hidden flex flex-col min-h-[500px]">
+                                            <div className="px-6 py-5 border-b border-emerald-500/20 bg-emerald-900/20 flex justify-between items-center">
                                                 <h2 className="font-bold text-white">Khata Ledger</h2>
-                                                <span className="bg-rose-950 text-rose-300 text-xs font-bold px-3 py-1 rounded-full border border-rose-500/30">
-                                                    {khataExpenses.length} records
+                                                <span className="bg-emerald-950 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full border border-emerald-500/30">
+                                                    {myKhataExpenses.length} records
                                                 </span>
                                             </div>
                                             
                                             <div className="flex-1 overflow-y-auto">
-                                                {khataExpenses.length === 0 ? (
+                                                {myKhataExpenses.length === 0 ? (
                                                     <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
                                                         <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
                                                             {renderIcon('book', 'w-8 h-8 opacity-50')}
                                                         </div>
-                                                        <p>No khata entries yet.</p>
+                                                        <p>Your khata is clean!</p>
                                                     </div>
                                                 ) : (
-                                                    <ul className="divide-y divide-rose-500/10">
-                                                        {khataExpenses.map((expense) => {
-                                                            const payerName = expense.paidBy || expense.paid_by || '?';
-                                                            const receiverName = payerName.toLowerCase() === 'amit' ? 'Shivam' : 'Amit';
-                                                            
+                                                    <ul className="divide-y divide-emerald-500/10">
+                                                        {myKhataExpenses.map((expense) => {
+                                                            const isTake = expense.type === 'khata_take';
                                                             const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
-                                                                year: 'numeric', month: 'short', day: 'numeric', 
-                                                                hour: '2-digit', minute: '2-digit' 
+                                                                year: 'numeric', month: 'short', day: 'numeric'
                                                             });
 
                                                             return (
                                                                 <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
                                                                     <div className="flex items-start gap-4">
-                                                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                                                                            {payerName.substring(0, 2)}
+                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden border ${isTake ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border-rose-500/30'}`}>
+                                                                            {expense.description.substring(0, 2)}
                                                                         </div>
                                                                         <div>
                                                                             <p className="font-bold text-white text-lg">{expense.description}</p>
-                                                                            <p className="text-xs text-rose-300 mt-1">
-                                                                                <span className="font-bold">{payerName}</span> lent to <span className="font-bold">{receiverName}</span> • {formattedDateTime}
+                                                                            <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${isTake ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                                                                                    {isTake ? 'I Take' : 'I Give'}
+                                                                                </span>
+                                                                                • {formattedDateTime}
                                                                             </p>
                                                                         </div>
                                                                     </div>
                                                                     
                                                                     <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
-                                                                        <span className="font-black text-white text-xl tracking-tight text-rose-400">
-                                                                            {formatAmount(expense.amount)}
+                                                                        <span className={`font-black text-xl tracking-tight ${isTake ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                                            {isTake ? '+' : '-'}{formatAmount(expense.amount)}
                                                                         </span>
                                                                         
                                                                         <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
