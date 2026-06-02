@@ -34,7 +34,7 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        // =========================================================================
+        //        // =========================================================================
         // 🛑 IMPORTANT: PASTE YOUR SUPABASE & API DETAILS HERE BEFORE SAVING
         // =========================================================================
         const SUPABASE_URL = "https://pdurzxmsjjwlhwaucakl.supabase.co"; 
@@ -77,8 +77,7 @@
             }
         };
 
-        function App() {
-            // Check if user has pasted keys
+        //        function App() {
             const keysAreMissing = SUPABASE_URL.includes("YOUR_SUPABASE_URL_HERE") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE_ANON_KEY_HERE");
 
             const [supabase, setSupabase] = useState(null);
@@ -97,46 +96,42 @@
             const [viewCurrency, setViewCurrency] = useState('INR');
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
             
-            // New App Theme State
             const [appTheme, setAppTheme] = useState(localStorage.getItem('unimoney_theme') || 'blue');
             const t = THEMES[appTheme] || THEMES.blue;
 
-            // Business Form State
-            const [bizForm, setBizForm] = useState({ mode: 'sale', description: '', amount: '', date: new Date().toISOString().split('T')[0] });
-            const [balances, setBalances] = useState(() => {
-                const saved = localStorage.getItem('unimoney_balances');
-                return saved ? JSON.parse(saved) : { personalCash: '', personalAccount: '', bizCash: '', bizAccount: '' };
+            // Business Form States
+            const [bizTab, setBizTab] = useState('sale'); // 'sale', 'exp', 'due', 'amit'
+            const [bizSaleForm, setBizSaleForm] = useState({ name: '', qty: 1, buy: '', exp: 0, sell: '', date: new Date().toISOString().split('T')[0] });
+            const [bizExpForm, setBizExpForm] = useState({ description: '', amount: '', date: new Date().toISOString().split('T')[0] });
+            const [bizBalances, setBizBalances] = useState(() => {
+                const saved = localStorage.getItem('unimoney_biz_balances');
+                return saved ? JSON.parse(saved) : { cash: '', account: '' };
             });
 
-            // New Khata Form State
-            const [khataForm, setKhataForm] = useState({
-                mode: 'take', // 'take' or 'give'
-                name: '',
-                amount: '',
-                date: new Date().toISOString().split('T')[0]
-            });
+            // Personal Balances
+            const [personalBalances, setPersonalBalances] = useState({ cash: '', account: '' });
+
+            // Khata Form State
+            const [khataForm, setKhataForm] = useState({ mode: 'take', name: '', amount: '', date: new Date().toISOString().split('T')[0] });
             
             // AI States
             const [isAnalyzingReceipt, setIsAnalyzingReceipt] = useState(false);
             const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
             const [aiInsights, setAiInsights] = useState("");
 
-            // 1. Initialize Supabase directly from hardcoded keys
-            useEffect(() => {
+            //            useEffect(() => {
                 if (!keysAreMissing) {
                     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                     setSupabase(sbClient);
                 }
             }, []);
 
-            // 2. Data Fetching Logic
             const fetchData = async () => {
                 if (!supabase) return;
 
                 const { data: usersData, error: usersErr } = await supabase.from('app_users').select('*');
                 if (!usersErr && usersData) {
                     setAppUsers(usersData);
-                    
                     const savedUserId = localStorage.getItem('unimoney_user_id');
                     if (savedUserId) {
                         const foundUser = usersData.find(u => String(u.id) === String(savedUserId));
@@ -152,11 +147,21 @@
                 if (!expErr && expData) setExpenses(expData);
             };
 
-            useEffect(() => {
-                fetchData();
-            }, [supabase]);
+            useEffect(() => { fetchData(); }, [supabase]);
 
-            // --- Missing Keys Screen ---
+            // Sync Personal Balances form with user's latest data
+            useEffect(() => {
+                if (loggedInUser && expenses.length > 0) {
+                    const myBalanceRecords = expenses.filter(e => e.type === 'user_balance' && e.paid_by === loggedInUser.username);
+                    if (myBalanceRecords.length > 0) {
+                        try {
+                            const parsed = JSON.parse(myBalanceRecords[0].description);
+                            setPersonalBalances({ cash: parsed.cash || '', account: parsed.account || '' });
+                        } catch(e) {}
+                    }
+                }
+            }, [loggedInUser, expenses]);
+
             if (keysAreMissing) {
                 return (
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
@@ -168,8 +173,7 @@
                 );
             }
 
-            // --- Auth Actions ---
-            const handleSetupAdmin = async (e) => {
+            //            const handleSetupAdmin = async (e) => {
                 e.preventDefault();
                 setAuthError('');
                 try {
@@ -183,9 +187,7 @@
                     setLoggedInUser(data[0]);
                     localStorage.setItem('unimoney_user_id', data[0].id);
                     await fetchData();
-                } catch (err) {
-                    setAuthError(err.message || "Failed to setup Admin.");
-                }
+                } catch (err) { setAuthError(err.message || "Failed to setup Admin."); }
             };
 
             const handleLogin = (e) => {
@@ -199,9 +201,7 @@
                     localStorage.setItem('unimoney_user_id', foundUser.id);
                     setLoginForm({ username: '', password: '' });
                     setActiveTab('group');
-                } else {
-                    setAuthError("Invalid username or password.");
-                }
+                } else { setAuthError("Invalid username or password."); }
             };
 
             const handleLogout = () => {
@@ -211,138 +211,20 @@
                 setIsMobileMenuOpen(false);
             };
 
-            // --- Profile Photo Upload (Instant Optimistic Update) ---
             const handleAvatarUpload = async (e) => {
                 const file = e.target.files[0];
                 if(!file) return;
-                
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64String = reader.result;
-                    // Instant UI update and reliable LocalStorage persist
                     setLoggedInUser(prev => ({ ...prev, avatar: base64String }));
                     localStorage.setItem(`unimoney_avatar_${loggedInUser.id}`, base64String);
-                    
                     const { error } = await supabase.from('app_users').update({ avatar: base64String }).eq('id', loggedInUser.id);
-                    if(error) {
-                        // Suppress db error if column doesn't exist, local storage acts as backup
-                    } else {
-                        await fetchData();
-                    }
+                    if(!error) await fetchData();
                 };
                 reader.readAsDataURL(file);
             };
 
-            // --- Gemini AI Actions ---
-            const handleReceiptUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                setIsAnalyzingReceipt(true);
-                try {
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {
-                        const base64Data = reader.result.split(',')[1];
-                        const mimeType = file.type;
-                        const prompt = "Analyze this receipt. Extract the total amount and a short description (like 'Dinner at Restaurant' or 'Gas Station'). Return ONLY valid JSON with 'amount' (number) and 'description' (string) fields.";
-                        
-                        const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{
-                                    role: "user",
-                                    parts: [
-                                        { text: prompt },
-                                        { inlineData: { mimeType, data: base64Data } }
-                                    ]
-                                }],
-                                generationConfig: {
-                                    responseMimeType: "application/json",
-                                    responseSchema: {
-                                        type: "OBJECT",
-                                        properties: {
-                                            amount: { type: "NUMBER" },
-                                            description: { type: "STRING" }
-                                        }
-                                    }
-                                }
-                            })
-                        });
-
-                        const textData = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                        if (textData) {
-                            const parsed = JSON.parse(textData);
-                            const rate = EXCHANGE_RATES[viewCurrency];
-                            const adjustedAmount = parsed.amount ? (parsed.amount * rate).toFixed(2) : prev.amount;
-
-                            setNewExpense(prev => ({
-                                ...prev,
-                                amount: adjustedAmount,
-                                description: parsed.description || prev.description
-                            }));
-                            showError("✨ Receipt analyzed successfully! Verify details below.");
-                        }
-                        setIsAnalyzingReceipt(false);
-                    };
-                    reader.readAsDataURL(file);
-                } catch (err) {
-                    showError("Failed to analyze receipt. Ensure it's a clear image.");
-                    setIsAnalyzingReceipt(false);
-                }
-            };
-
-            const handleGenerateInsights = async () => {
-                if (expenses.length === 0) {
-                    showError("Need some expenses to analyze first!");
-                    return;
-                }
-                
-                setIsGeneratingInsights(true);
-                try {
-                    const expenseSummary = expenses.map(e => `${e.paidBy || e.paid_by} spent ${e.amount} on ${e.description} (${e.type})`).join('\n');
-                    const prompt = `You are a fun, witty financial advisor. Here is a list of travel expenses for our group trip:\n${expenseSummary}\n\nProvide a short, entertaining summary (max 3 short paragraphs) of our spending habits. Point out who spent the most, what our weirdest or biggest expenses are, and give us a funny financial rating at the end. Use emojis!`;
-                    
-                    const result = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }]
-                        })
-                    });
-                    
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) setAiInsights(text);
-                } catch (err) {
-                    showError("Failed to generate AI insights.");
-                } finally {
-                    setIsGeneratingInsights(false);
-                }
-            };
-
-            // --- Trip Hub Actions ---
-            const handleExportCSV = () => {
-                let csv = "Date,Type,Description,Paid By,Amount\n";
-                expenses.filter(e => e.type === 'group' || e.type === 'personal' || e.type === 'khata').forEach(e => {
-                    csv += `"${new Date(e.timestamp).toLocaleString()}","${e.type}","${e.description}","${e.paidBy || e.paid_by}","${e.amount}"\n`;
-                });
-                
-                csv += "\nSETTLEMENTS (Who Owes Who)\n";
-                settlements.forEach(s => {
-                    csv += `"${s.from}","owes","${s.to}","${s.amount}"\n`;
-                });
-
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.setAttribute('href', url);
-                a.setAttribute('download', 'UniMoney_Trip_Report.csv');
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            };
-
-            // --- Helper: Format Currency ---
             const formatAmount = (baseAmount) => {
                 const rate = EXCHANGE_RATES[viewCurrency];
                 const converted = baseAmount * rate;
@@ -354,169 +236,157 @@
                 setTimeout(() => setUiError(''), 4000);
             };
 
-            // --- Data Actions ---
-            const handleAddExpense = async (e) => {
+            //            const handleAddExpense = async (e) => {
                 e.preventDefault();
                 const amountNum = parseFloat(newExpense.amount);
-                if (!amountNum || !newExpense.description) {
-                    showError("Please fill amount and description.");
-                    return;
-                }
+                if (!amountNum || !newExpense.description) return showError("Please fill amount and description.");
 
                 const baseRate = EXCHANGE_RATES[viewCurrency];
                 const amountInBaseINR = amountNum / baseRate;
-
-                let payer = '';
-                if (activeTab === 'group') {
-                    if (loggedInUser.role === 'admin') {
-                        if (!newExpense.paidBy) {
-                            showError("Please select who paid.");
-                            return;
-                        }
-                        payer = newExpense.paidBy;
-                    } else {
-                        payer = loggedInUser.username;
-                    }
-                } else {
-                    payer = loggedInUser.username;
+                let payer = loggedInUser.username;
+                
+                if (activeTab === 'group' && loggedInUser.role === 'admin') {
+                    if (!newExpense.paidBy) return showError("Please select who paid.");
+                    payer = newExpense.paidBy;
                 }
 
                 try {
-                    const { error } = await supabase.from('expenses').insert([{
+                    await supabase.from('expenses').insert([{
                         type: activeTab === 'group' ? 'group' : 'personal',
                         amount: amountInBaseINR,
                         description: newExpense.description,
                         paid_by: payer,
                         timestamp: Date.now()
                     }]);
-                    if (error) throw error;
                     setNewExpense({ amount: '', description: '', paidBy: '' });
                     await fetchData(); 
-                } catch (err) {
-                    showError(err.message || "Failed to add expense.");
-                }
+                } catch (err) { showError("Failed to add expense."); }
+            };
+
+            const handleSavePersonalBalances = async (e) => {
+                e.preventDefault();
+                const cash = parseFloat(personalBalances.cash || 0);
+                const account = parseFloat(personalBalances.account || 0);
+                const payload = { cash, account };
+
+                try {
+                    await supabase.from('expenses').insert([{
+                        type: 'user_balance',
+                        amount: 0,
+                        description: JSON.stringify(payload),
+                        paid_by: loggedInUser.username,
+                        timestamp: Date.now()
+                    }]);
+                    showError("✅ Wallet Balances Saved!");
+                    await fetchData();
+                } catch(err) { showError("Failed to save balances"); }
             };
 
             const handleAddKhata = async (e) => {
                 e.preventDefault();
                 const amountNum = parseFloat(khataForm.amount);
-                if (!amountNum || !khataForm.name) {
-                    showError("Please fill name and amount.");
-                    return;
-                }
+                if (!amountNum || !khataForm.name) return showError("Please fill name and amount.");
 
                 const baseRate = EXCHANGE_RATES[viewCurrency];
                 const amountInBaseINR = amountNum / baseRate;
-                
-                // Parse local date strictly to timestamp
-                const timestamp = new Date(khataForm.date).getTime();
+                const timestamp = new Date(khataForm.date).getTime() || Date.now();
 
                 try {
-                    const { error } = await supabase.from('expenses').insert([{
+                    await supabase.from('expenses').insert([{
                         type: khataForm.mode === 'take' ? 'khata_take' : 'khata_give',
                         amount: amountInBaseINR,
                         description: khataForm.name,
                         paid_by: loggedInUser.username,
-                        timestamp: timestamp || Date.now()
+                        timestamp: timestamp
                     }]);
-                    if (error) throw error;
                     setKhataForm({ ...khataForm, name: '', amount: '' });
                     showError("✅ Due Saved!");
                     await fetchData(); 
-                } catch (err) {
-                    showError(err.message || "Failed to add Khata entry.");
-                }
+                } catch (err) { showError("Failed to add Khata entry."); }
             };
 
-            const handleAddBizRecord = async (e) => {
+            const handleAddBizSale = async (e) => {
                 e.preventDefault();
-                const amountNum = parseFloat(bizForm.amount);
-                if (!amountNum || !bizForm.description) {
-                    showError("Please fill description and amount.");
-                    return;
-                }
+                const qty = parseFloat(bizSaleForm.qty || 1);
+                const buy = parseFloat(bizSaleForm.buy || 0);
+                const exp = parseFloat(bizSaleForm.exp || 0);
+                const sell = parseFloat(bizSaleForm.sell || 0);
+                
+                if (!bizSaleForm.name || !sell) return showError("Product Name and Sell Price required.");
+
                 const baseRate = EXCHANGE_RATES[viewCurrency];
-                const amountInBaseINR = amountNum / baseRate;
-                const timestamp = new Date(bizForm.date).getTime();
+                const totalRev = (qty * sell) / baseRate;
+                const totalCost = (qty * (buy + exp)) / baseRate;
+                const timestamp = new Date(bizSaleForm.date).getTime() || Date.now();
+                const payload = { name: bizSaleForm.name, qty, buy, exp, sell, totalRev, totalCost };
 
                 try {
-                    const { error } = await supabase.from('expenses').insert([{
-                        type: bizForm.mode === 'sale' ? 'biz_sale' : 'biz_exp',
-                        amount: amountInBaseINR,
-                        description: bizForm.description,
+                    await supabase.from('expenses').insert([{
+                        type: 'biz_sale',
+                        amount: totalRev,
+                        description: JSON.stringify(payload),
                         paid_by: loggedInUser.username,
-                        timestamp: timestamp || Date.now()
+                        timestamp: timestamp
                     }]);
-                    if (error) throw error;
-                    setBizForm({ ...bizForm, description: '', amount: '' });
-                    showError("✅ Business Record Saved!");
+                    setBizSaleForm({ ...bizSaleForm, name: '', buy: '', sell: '' });
+                    showError("✅ Sale Saved Successfully!");
                     await fetchData(); 
-                } catch (err) {
-                    showError(err.message || "Failed to add business record.");
-                }
+                } catch (err) { showError("Failed to add sale record."); }
             };
 
-            const handleSaveBalances = (e) => {
+            const handleAddBizExp = async (e) => {
                 e.preventDefault();
-                localStorage.setItem('unimoney_balances', JSON.stringify(balances));
-                showError("✅ Balances Saved Successfully!");
+                const amountNum = parseFloat(bizExpForm.amount);
+                if (!amountNum || !bizExpForm.description) return showError("Please fill description and amount.");
+
+                const baseRate = EXCHANGE_RATES[viewCurrency];
+                const amountInBaseINR = amountNum / baseRate;
+                const timestamp = new Date(bizExpForm.date).getTime() || Date.now();
+
+                try {
+                    await supabase.from('expenses').insert([{
+                        type: 'biz_exp',
+                        amount: amountInBaseINR,
+                        description: bizExpForm.description,
+                        paid_by: loggedInUser.username,
+                        timestamp: timestamp
+                    }]);
+                    setBizExpForm({ ...bizExpForm, description: '', amount: '' });
+                    showError("✅ Business Expense Saved!");
+                    await fetchData(); 
+                } catch (err) { showError("Failed to add business record."); }
+            };
+
+            const handleSaveBizBalances = (e) => {
+                e.preventDefault();
+                localStorage.setItem('unimoney_biz_balances', JSON.stringify(bizBalances));
+                showError("✅ Business Balances Saved!");
             };
 
             const handleDeleteExpense = async (expenseId) => {
                 const expense = expenses.find(e => e.id === expenseId);
-                const isKhataOwner = (expense?.type === 'khata_take' || expense?.type === 'khata_give' || expense?.type === 'khata') && (expense.paidBy === loggedInUser?.username || expense.paid_by === loggedInUser?.username);
+                const isKhataOwner = (expense?.type === 'khata_take' || expense?.type === 'khata_give') && expense.paid_by === loggedInUser?.username;
                 
                 if (loggedInUser.role !== 'admin' && !isKhataOwner) return;
-                
                 await supabase.from('expenses').delete().eq('id', expenseId);
                 await fetchData(); 
             };
 
-            const handleCreateFriend = async (e) => {
-                e.preventDefault();
-                if (loggedInUser.role !== 'admin') return;
-                if (appUsers.some(u => u.username.toLowerCase() === newFriend.username.trim().toLowerCase())) {
-                    showError("Username already exists!");
-                    return;
-                }
-                await supabase.from('app_users').insert([{
-                    username: newFriend.username.trim(),
-                    password: newFriend.password,
-                    role: 'friend',
-                    created_at: Date.now()
-                }]);
-                setNewFriend({ username: '', password: '' });
-                await fetchData(); 
-            };
-
-            const handleDeleteUser = async (userId) => {
-                if (loggedInUser.role !== 'admin') return;
-                await supabase.from('app_users').delete().eq('id', userId);
-                await fetchData(); 
-            };
-
-            // --- Calculations & Settlements ---
-            const visibleExpenses = useMemo(() => {
+            //            const visibleExpenses = useMemo(() => {
                 if (activeTab === 'group') return expenses.filter(e => e.type === 'group');
-                if (activeTab === 'personal') {
-                    return expenses.filter(e => e.type === 'personal' && (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username));
-                }
-                if (activeTab === 'all_personal' && loggedInUser?.role === 'admin') {
-                    return expenses.filter(e => e.type === 'personal');
-                }
+                if (activeTab === 'personal') return expenses.filter(e => e.type === 'personal' && e.paid_by === loggedInUser?.username);
+                if (activeTab === 'all_personal') return expenses.filter(e => e.type === 'personal');
                 return [];
             }, [expenses, activeTab, loggedInUser]);
 
             const groupTotal = useMemo(() => expenses.filter(e => e.type === 'group').reduce((sum, e) => sum + e.amount, 0), [expenses]);
-
+            
             const groupExpensesByPerson = useMemo(() => {
                 const summary = {};
                 appUsers.forEach(u => summary[u.username] = 0);
                 expenses.filter(e => e.type === 'group').forEach(exp => {
-                    const payerName = exp.paidBy || exp.paid_by;
-                    if (summary[payerName] !== undefined) {
-                        summary[payerName] += exp.amount;
-                    }
+                    const payerName = exp.paid_by;
+                    if (summary[payerName] !== undefined) summary[payerName] += exp.amount;
                 });
                 return summary;
             }, [expenses, appUsers]);
@@ -524,134 +394,108 @@
             const settlements = useMemo(() => {
                 if (appUsers.length === 0 || groupTotal === 0) return [];
                 const perPersonShare = groupTotal / appUsers.length;
-                
-                const debtors = [];
-                const creditors = [];
+                const debtors = [], creditors = [];
 
                 appUsers.forEach(u => {
-                    const paid = groupExpensesByPerson[u.username] || 0;
-                    const balance = paid - perPersonShare;
+                    const balance = (groupExpensesByPerson[u.username] || 0) - perPersonShare;
                     if (balance < -0.01) debtors.push({ name: u.username, amount: Math.abs(balance) });
                     else if (balance > 0.01) creditors.push({ name: u.username, amount: balance });
                 });
-
                 debtors.sort((a, b) => b.amount - a.amount);
                 creditors.sort((a, b) => b.amount - a.amount);
 
                 const transactions = [];
                 let i = 0, j = 0;
-
                 while (i < debtors.length && j < creditors.length) {
-                    const debtor = debtors[i];
-                    const creditor = creditors[j];
+                    const debtor = debtors[i], creditor = creditors[j];
                     const amountToSettle = Math.min(debtor.amount, creditor.amount);
-
                     transactions.push({ from: debtor.name, to: creditor.name, amount: amountToSettle });
                     debtor.amount -= amountToSettle;
                     creditor.amount -= amountToSettle;
-
                     if (debtor.amount < 0.01) i++;
                     if (creditor.amount < 0.01) j++;
                 }
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers]);
 
-            // --- Khata Calculations ---
+            // All Users' Balances (Admin only visibility)
+            const allUserBalances = useMemo(() => {
+                const bal = {};
+                appUsers.forEach(u => bal[u.username] = { cash: 0, account: 0, total: 0 });
+                
+                // Read latest balance update for each user
+                const sorted = [...expenses].reverse(); // oldest to newest, so newest overwrites
+                sorted.filter(e => e.type === 'user_balance').forEach(e => {
+                    try {
+                        const parsed = JSON.parse(e.description);
+                        if (bal[e.paid_by]) {
+                            bal[e.paid_by].cash = parsed.cash || 0;
+                            bal[e.paid_by].account = parsed.account || 0;
+                            bal[e.paid_by].total = (parsed.cash || 0) + (parsed.account || 0);
+                        }
+                    } catch(err) {}
+                });
+                return bal;
+            }, [expenses, appUsers]);
+
+            const grandTotalFunds = useMemo(() => {
+                let total = 0;
+                Object.values(allUserBalances).forEach(b => total += b.total);
+                return total;
+            }, [allUserBalances]);
+
+            // Khata Calculations (Reversed Logic: Take=Owe, Give=Owed)
             const isKhataEligible = ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
-            
             const myKhataExpenses = useMemo(() => {
-                return expenses.filter(e => 
-                    (e.type === 'khata_take' || e.type === 'khata_give' || e.type === 'khata') && 
-                    (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username)
-                );
+                return expenses.filter(e => (e.type === 'khata_take' || e.type === 'khata_give') && e.paid_by === loggedInUser?.username);
             }, [expenses, loggedInUser]);
             
             const khataTotals = useMemo(() => {
-                let take = 0;
-                let give = 0;
+                let take = 0; // I owe
+                let give = 0; // Owed to me
                 myKhataExpenses.forEach(e => {
                     if (e.type === 'khata_take') take += e.amount;
                     if (e.type === 'khata_give') give += e.amount;
                 });
-                return { take, give, net: take - give };
+                return { take, give, net: give - take }; // Positive means I get money, Negative means I pay
             }, [myKhataExpenses]);
 
-            // --- Business Calculations ---
+            // Business Calculations
             const bizRecords = useMemo(() => {
                 return expenses.filter(e => (e.type === 'biz_sale' || e.type === 'biz_exp') && e.paid_by === loggedInUser?.username);
             }, [expenses, loggedInUser]);
 
             const bizTotals = useMemo(() => {
                 let sales = 0;
+                let cogs = 0; // Cost of goods sold
                 let exps = 0;
                 bizRecords.forEach(e => {
-                    if (e.type === 'biz_sale') sales += e.amount;
+                    if (e.type === 'biz_sale') {
+                        try {
+                            const data = JSON.parse(e.description);
+                            sales += data.totalRev || 0;
+                            cogs += data.totalCost || 0;
+                        } catch(err) { sales += e.amount; }
+                    }
                     if (e.type === 'biz_exp') exps += e.amount;
                 });
-                return { sales, exps, profit: sales - exps };
+                return { sales, costs: cogs + exps, profit: sales - (cogs + exps) };
             }, [bizRecords]);
 
-            // --- Dynamic Themes setup ---
-            const getThemeClasses = () => {
+            //            const getThemeClasses = () => {
                 switch(activeTab) {
                     case 'group': return { bg: 'bg-slate-900' };
                     case 'personal': return { bg: 'bg-indigo-950' };
                     case 'all_personal': return { bg: 'bg-cyan-950' };
                     case 'hub': return { bg: 'bg-fuchsia-950' };
                     case 'khata': return { bg: 'bg-emerald-950' };
+                    case 'business': return { bg: 'bg-violet-950' };
                     case 'admin': return { bg: 'bg-amber-950' };
                     default: return { bg: 'bg-slate-900' };
                 }
             };
             const themeConfig = getThemeClasses();
 
-            // --- Auth Screens ---
-            if (!supabase) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Cloud Services...</div>;
-
-            if (!loggedInUser) {
-                const hasAdmin = appUsers.some(u => u.role === 'admin');
-                return (
-                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-                        <div className="w-full max-w-sm">
-                            <div className="bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
-                                <div className="w-16 h-16 bg-blue-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-blue-400">
-                                    {hasAdmin ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                    ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                                    )}
-                                </div>
-                                <h1 className="text-2xl font-bold text-center text-white mb-2">UniMoney</h1>
-                                <p className="text-slate-400 text-center text-sm mb-8">
-                                    {hasAdmin ? "Welcome back to your workspace" : "Create Master Admin to initialize"}
-                                </p>
-                                
-                                {authError && (
-                                    <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl text-sm mb-6 text-center">
-                                        {authError}
-                                    </div>
-                                )}
-
-                                <form onSubmit={hasAdmin ? handleLogin : handleSetupAdmin} className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Username</label>
-                                        <input type="text" required value={hasAdmin ? loginForm.username : setupForm.username} onChange={e => hasAdmin ? setLoginForm({...loginForm, username: e.target.value}) : setSetupForm({...setupForm, username: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter username" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Password</label>
-                                        <input type="password" required value={hasAdmin ? loginForm.password : setupForm.password} onChange={e => hasAdmin ? setLoginForm({...loginForm, password: e.target.value}) : setSetupForm({...setupForm, password: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••" />
-                                    </div>
-                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold transition-colors mt-6 shadow-lg shadow-blue-500/30">
-                                        {hasAdmin ? "Secure Login" : "Initialize Admin"}
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            // --- Icons rendering function ---
             const renderIcon = (name, className) => {
                 const icons = {
                     users: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
@@ -663,15 +507,14 @@
                     close: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
                     arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
                     camera: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
-                    download: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
-                    upload: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
+                    book: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>,
                     sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>,
-                    book: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                    briefcase: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
                 };
                 return icons[name] || null;
             };
 
-            const NavItem = ({ id, icon, label, colorClass }) => (
+            const NavItem = ({ id, icon, label }) => (
                 <button 
                     onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -685,18 +528,49 @@
                 </button>
             );
 
-            return (
+            //            if (!supabase) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Cloud Services...</div>;
+
+            if (!loggedInUser) {
+                const hasAdmin = appUsers.some(u => u.role === 'admin');
+                return (
+                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+                        <div className="w-full max-w-sm">
+                            <div className="bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
+                                <div className={`w-16 h-16 ${t.light} rounded-2xl flex items-center justify-center mx-auto mb-6 ${t.text}`}>
+                                    {hasAdmin ? renderIcon('shield', 'w-8 h-8') : renderIcon('users', 'w-8 h-8')}
+                                </div>
+                                <h1 className="text-2xl font-bold text-center text-white mb-2">UniMoney</h1>
+                                <p className="text-slate-400 text-center text-sm mb-8">{hasAdmin ? "Welcome back to your workspace" : "Create Master Admin"}</p>
+                                
+                                {authError && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl text-sm mb-6 text-center">{authError}</div>}
+
+                                <form onSubmit={hasAdmin ? handleLogin : handleSetupAdmin} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Username</label>
+                                        <input type="text" required value={hasAdmin ? loginForm.username : setupForm.username} onChange={e => hasAdmin ? setLoginForm({...loginForm, username: e.target.value}) : setSetupForm({...setupForm, username: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter username" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Password</label>
+                                        <input type="password" required value={hasAdmin ? loginForm.password : setupForm.password} onChange={e => hasAdmin ? setLoginForm({...loginForm, password: e.target.value}) : setSetupForm({...setupForm, password: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••" />
+                                    </div>
+                                    <button type="submit" className={`w-full ${t.main} ${t.hover} text-white py-3 rounded-xl font-bold transition-colors mt-6 shadow-lg ${t.shadow}`}>
+                                        {hasAdmin ? "Secure Login" : "Initialize Admin"}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            //            return (
                 <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden font-sans">
                     
-                    {/* Mobile Header - FIX: Small profile photo added here! */}
+                    {/* Mobile Header */}
                     <div className="md:hidden fixed top-0 left-0 right-0 h-16 glass-panel z-40 flex justify-between items-center px-4 border-b border-slate-800">
                         <div className="flex items-center gap-3 font-bold text-white">
                             <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-600 bg-slate-800 flex items-center justify-center">
-                                {loggedInUser.avatar ? (
-                                    <img src={loggedInUser.avatar} className="w-full h-full object-cover" alt="Profile" />
-                                ) : (
-                                    <span className="text-xs">{loggedInUser.username.substring(0,2).toUpperCase()}</span>
-                                )}
+                                {loggedInUser.avatar ? <img src={loggedInUser.avatar} className="w-full h-full object-cover" /> : <span className="text-xs">{loggedInUser.username.substring(0,2).toUpperCase()}</span>}
                             </div>
                             <span className="tracking-tight text-lg">UniMoney</span>
                         </div>
@@ -708,18 +582,13 @@
                     {/* Sidebar */}
                     <aside className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-[#0b1121] border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                         
-                        {/* Profile Section with Photo Upload */}
                         <div className="p-6 pt-20 md:pt-6 border-b border-slate-800">
                             <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
                                 <div className="relative">
-                                    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent">
-                                        {loggedInUser.avatar ? (
-                                            <img src={loggedInUser.avatar} className="w-full h-full object-cover" alt="Profile" />
-                                        ) : (
-                                            loggedInUser.username.substring(0,2).toUpperCase()
-                                        )}
+                                    <div className={`w-12 h-12 ${t.main} rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent`}>
+                                        {loggedInUser.avatar ? <img src={loggedInUser.avatar} className="w-full h-full object-cover" /> : loggedInUser.username.substring(0,2).toUpperCase()}
                                     </div>
-                                    <label className="absolute -bottom-1 -right-1 bg-slate-700 hover:bg-indigo-500 border border-slate-600 hover:border-indigo-400 rounded-full p-1.5 cursor-pointer transition-all shadow-lg z-10" title="Upload Profile Photo">
+                                    <label className="absolute -bottom-1 -right-1 bg-slate-700 hover:bg-indigo-500 border border-slate-600 rounded-full p-1.5 cursor-pointer shadow-lg z-10" title="Upload Photo">
                                         {renderIcon('camera', 'w-3 h-3 text-white')}
                                         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                                     </label>
@@ -728,67 +597,47 @@
                                     <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Profile</p>
                                     <p className="font-bold text-white truncate text-lg">{loggedInUser.username}</p>
                                 </div>
-                                {loggedInUser.role === 'admin' && (
-                                    <span className="bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-1 rounded border border-amber-500/20">ADMIN</span>
-                                )}
+                                {loggedInUser.role === 'admin' && <span className="bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-1 rounded border border-amber-500/20">ADMIN</span>}
                             </div>
                         </div>
 
-                        {/* Navigation - FIX: Added dynamic colors to the buttons! */}
                         <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                             <NavItem id="group" icon="users" label="Shared Trip" />
-                            <NavItem id="personal" icon="wallet" label={loggedInUser.role === 'admin' ? "Everyone's Personal" : "My Personal"} />
+                            <NavItem id="personal" icon="wallet" label="My Personal" />
                             {loggedInUser.role === 'admin' && (
-                                <NavItem id="business" icon="wallet" label="My Business" />
+                                <>
+                                    <NavItem id="all_personal" icon="users" label="Everyone's Personal" />
+                                    <NavItem id="business" icon="briefcase" label="My Business" />
+                                </>
                             )}
-                            {isKhataEligible && (
-                                <NavItem id="khata" icon="book" label="My Khata" />
-                            )}
+                            {isKhataEligible && <NavItem id="khata" icon="book" label="My Khata" />}
                             <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" />
-                            {loggedInUser.role === 'admin' && (
-                                <NavItem id="admin" icon="shield" label="Manage Access" />
-                            )}
+                            {loggedInUser.role === 'admin' && <NavItem id="admin" icon="shield" label="Manage Access" />}
                         </div>
 
-                        {/* Bottom Actions */}
                         <div className="p-4 border-t border-slate-800 space-y-4">
                             <div className="space-y-2 mb-2">
                                 <label className="text-xs font-semibold text-slate-500 uppercase px-2">App Color Theme</label>
                                 <div className="flex gap-2 px-2">
                                     {Object.keys(THEMES).map(color => (
-                                        <button 
-                                            key={color} 
-                                            onClick={() => { setAppTheme(color); localStorage.setItem('unimoney_theme', color); }}
-                                            className={`w-6 h-6 rounded-full ${THEMES[color].main} ${appTheme === color ? 'ring-2 ring-white border-2 border-slate-900' : 'opacity-50 hover:opacity-100'}`}
-                                            title={color}
-                                        />
+                                        <button key={color} onClick={() => { setAppTheme(color); localStorage.setItem('unimoney_theme', color); }} className={`w-6 h-6 rounded-full ${THEMES[color].main} ${appTheme === color ? 'ring-2 ring-white border-2 border-slate-900' : 'opacity-50 hover:opacity-100'}`} />
                                     ))}
                                 </div>
                             </div>
-                            
                             <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase px-2">Display Currency</label>
-                                <select 
-                                    value={viewCurrency} 
-                                    onChange={(e) => setViewCurrency(e.target.value)}
-                                    className="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500"
-                                >
+                                <select value={viewCurrency} onChange={(e) => setViewCurrency(e.target.value)} className="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-xl px-4 py-3 focus:outline-none">
                                     <option value="INR">🇮🇳 INR (₹)</option>
                                     <option value="USD">🇺🇸 USD ($)</option>
                                     <option value="EUR">🇪🇺 EUR (€)</option>
-                                    <option value="GBP">🇬🇧 GBP (£)</option>
                                 </select>
                             </div>
-                            
-                            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-sm font-medium border border-transparent hover:border-red-500/20">
-                                Logout Workspace
-                            </button>
+                            <button onClick={handleLogout} className="w-full py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-sm font-medium transition-colors">Logout Workspace</button>
                         </div>
                     </aside>
 
-                    {/* Main Content Area - FIX: Dynamic background added here! */}
+                    {/* }
                     <main className={`flex-1 h-full overflow-y-auto pt-16 md:pt-0 transition-colors duration-500 ${themeConfig.bg}`}>
-                        {/* FIX: 'key' prop forces animation to replay on tab switch */}
                         <div key={activeTab} className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 animate-tab">
                             
                             {uiError && (
@@ -798,174 +647,56 @@
                                 </div>
                             )}
 
-                            {/* --- TRIP HUB TAB --- */}
-                            {activeTab === 'hub' && (
-                                <div className="space-y-6">
-                                    <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
-                                        <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
-                                        <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
-                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Access our 5TB shared Google Drive! You can instantly upload your photos and videos, or download the full trip collection.</p>
-                                        
-                                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
-                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-600/20">
-                                                {renderIcon('upload', 'w-5 h-5')} Upload Media
-                                            </a>
-                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-8 py-4 rounded-xl font-bold text-sm transition-all shadow-lg">
-                                                {renderIcon('camera', 'w-5 h-5')} View & Download
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    {/* AI Insights Card */}
-                                    <div className="bg-gradient-to-r from-fuchsia-900/40 to-purple-900/40 border border-fuchsia-500/30 rounded-2xl p-8 relative overflow-hidden">
-                                        <div className="absolute -left-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('sparkles', 'w-full h-full')}</div>
-                                        <div className="flex flex-col md:flex-row gap-6 relative z-10">
-                                            <div className="flex-1">
-                                                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                                                    {renderIcon('sparkles', 'w-6 h-6 text-fuchsia-400')}
-                                                    AI Financial Advisor
-                                                </h3>
-                                                <p className="text-fuchsia-200 text-sm mb-4">Let Gemini AI analyze your trip expenses and give you a fun, witty breakdown of your group's spending habits!</p>
-                                                
-                                                {aiInsights ? (
-                                                    <div className="space-y-3 mt-6 bg-slate-900/50 p-6 rounded-xl border border-fuchsia-500/20 text-slate-300 text-sm leading-relaxed">
-                                                        {aiInsights.split('\n').map((para, idx) => (
-                                                            <p key={idx}>{para}</p>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <button 
-                                                        onClick={handleGenerateInsights} 
-                                                        disabled={isGeneratingInsights}
-                                                        className="flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-fuchsia-600/20"
-                                                    >
-                                                        {isGeneratingInsights ? "✨ Analyzing Data..." : "✨ Generate Trip Insights"}
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
-                                        <div>
-                                            <h3 className="text-xl font-bold text-white mb-1">Save Trip Data</h3>
-                                            <p className="text-slate-400 text-sm">Download a complete Excel/CSV report containing all expenses, totals, and "who owes who" settlements.</p>
-                                        </div>
-                                        <button onClick={handleExportCSV} className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap">
-                                            {renderIcon('download', 'w-5 h-5')} Export Total Summary
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* --- ADMIN TAB --- */}
-                            {activeTab === 'admin' && loggedInUser.role === 'admin' && (
-                                <div className="space-y-6">
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
-                                        <h2 className="text-lg font-bold text-white mb-4">Create User Credentials</h2>
-                                        <form onSubmit={handleCreateFriend} className="flex flex-col sm:flex-row gap-4">
-                                            <input type="text" required value={newFriend.username} onChange={e => setNewFriend({...newFriend, username: e.target.value})} placeholder="Friend's Username" className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white" />
-                                            <input type="text" required value={newFriend.password} onChange={e => setNewFriend({...newFriend, password: e.target.value})} placeholder="Create Password" className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white" />
-                                            <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl font-bold transition-colors">Add User</button>
-                                        </form>
-                                    </div>
-                                    
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-                                        <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">All Active Accounts</h3></div>
-                                        <ul className="divide-y divide-slate-700">
-                                            {appUsers.map(u => (
-                                                <li key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-800 transition-colors">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white overflow-hidden border border-slate-600">
-                                                            {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover" /> : u.username.substring(0,2).toUpperCase()}
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-bold text-white flex items-center gap-2">
-                                                                {u.username}
-                                                                {u.role === 'admin' && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase">Admin</span>}
-                                                            </p>
-                                                            <p className="text-xs text-slate-500 mt-1 font-mono">PWD: {u.role === 'admin' ? '********' : u.password}</p>
-                                                        </div>
-                                                    </div>
-                                                    {u.role !== 'admin' && (
-                                                        <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-slate-500 hover:text-red-400 bg-slate-900 rounded-lg border border-slate-700 hover:border-red-500/50 transition-colors">
-                                                            {renderIcon('trash', 'w-5 h-5')}
-                                                        </button>
-                                                    )}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* --- EXPENSE TABS --- */}
-                            {(activeTab === 'group' || activeTab === 'personal' || activeTab === 'all_personal') && (
+                            {/* --- SHARED TRIP --- */}
+                            {activeTab === 'group' && (
                                 <div className="grid xl:grid-cols-3 gap-8">
-                                    
-                                    {/* Left Column (Input & Summary) */}
                                     <div className="xl:col-span-1 space-y-6">
-                                        
-                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
                                             <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
-                                                <h2 className="font-bold text-white flex items-center gap-2">
-                                                    {renderIcon('plus', "w-5 h-5 text-blue-400")}
-                                                    {activeTab === 'group' ? 'Add Group Expense' : 'Add Personal Expense'}
-                                                </h2>
-                                                
-                                                {/* Gemini Vision Receipt Scanner Button */}
-                                                <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isAnalyzingReceipt ? 'bg-indigo-500/20 text-indigo-300 cursor-wait' : 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 border border-indigo-500/30'}`}>
-                                                    {renderIcon('sparkles', 'w-3 h-3')}
-                                                    {isAnalyzingReceipt ? 'Analyzing...' : 'Scan Receipt'}
-                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleReceiptUpload} disabled={isAnalyzingReceipt} />
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('plus', "w-5 h-5 text-blue-400")} Add Group Expense</h2>
+                                                <label className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isAnalyzingReceipt ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 border border-indigo-500/30'}`}>
+                                                    {renderIcon('sparkles', 'w-3 h-3')} {isAnalyzingReceipt ? 'Analyzing...' : 'Scan'}
+                                                    <input type="file" accept="image/*" className="hidden" onChange={handleReceiptUpload} disabled={isAnalyzingReceipt} />
                                                 </label>
                                             </div>
                                             <div className="p-5">
                                                 <form onSubmit={handleAddExpense} className="space-y-4">
-                                                    {activeTab === 'group' && (
-                                                        <div>
-                                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Who paid?</label>
-                                                            {loggedInUser.role === 'admin' ? (
-                                                                <select value={newExpense.paidBy} onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 text-white appearance-none">
-                                                                    <option value="">Select someone...</option>
-                                                                    {appUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                                                                </select>
-                                                            ) : (
-                                                                <div className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
-                                                                    {renderIcon('shield', 'w-4 h-4 text-blue-500')} 
-                                                                    {loggedInUser.username} <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 ml-auto">Auto</span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    
                                                     <div>
-                                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
-                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 text-white" required />
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Who paid?</label>
+                                                        {loggedInUser.role === 'admin' ? (
+                                                            <select value={newExpense.paidBy} onChange={e => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white appearance-none">
+                                                                <option value="">Select someone...</option>
+                                                                {appUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <div className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
+                                                                {renderIcon('shield', 'w-4 h-4 text-blue-500')} {loggedInUser.username} <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded ml-auto">Auto</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Description</label>
-                                                        <input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} placeholder={activeTab === 'group' ? "Dinner, Taxi..." : "Souvenir..."} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 text-white" required />
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
                                                     </div>
-                                                    <button type="submit" className={`w-full py-3 rounded-xl font-bold transition-all shadow-lg text-white ${t.main} ${t.hover} ${t.shadow}`}>
-                                                        Save Expense
-                                                    </button>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Description</label>
+                                                        <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="Dinner, Taxi..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                    </div>
+                                                    <button type="submit" className={`w-full py-3 rounded-xl font-bold text-white ${t.main} ${t.hover} shadow-lg ${t.shadow}`}>Save Expense</button>
                                                 </form>
                                             </div>
                                         </div>
 
-                                        {/* Total Spent Widget */}
                                         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 shadow-xl relative overflow-hidden">
                                             <div className="absolute -right-6 -top-6 text-slate-700/30 w-32 h-32">{renderIcon('wallet', 'w-full h-full')}</div>
-                                            <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 relative z-10">Total Group Spend</h3>
+                                            <h3 className="text-slate-400 text-xs font-bold uppercase mb-2 relative z-10">Total Group Spend</h3>
                                             <p className="text-4xl font-black text-white relative z-10">{formatAmount(groupTotal)}</p>
                                         </div>
 
-                                        {/* SETTLEMENTS CALCULATOR */}
-                                        {activeTab === 'group' && groupTotal > 0 && settlements.length > 0 && (
-                                            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl overflow-hidden">
+                                        {groupTotal > 0 && settlements.length > 0 && (
+                                            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl overflow-hidden shadow-xl">
                                                 <div className="bg-emerald-900/40 px-5 py-3 border-b border-emerald-500/20">
-                                                    <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Who Owes Who</h3>
+                                                    <h3 className="text-xs font-bold text-emerald-400 uppercase">Who Owes Who</h3>
                                                 </div>
                                                 <div className="p-4 space-y-3">
                                                     {settlements.map((s, idx) => (
@@ -983,66 +714,41 @@
                                         )}
                                     </div>
 
-                                    {/* Right Column (Feed) */}
                                     <div className="xl:col-span-2">
-                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px]">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
                                             <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
                                                 <h2 className="font-bold text-white">Recent Transactions</h2>
-                                                <span className="bg-slate-900 text-slate-400 text-xs font-bold px-3 py-1 rounded-full border border-slate-700">
-                                                    {visibleExpenses.length} records
-                                                </span>
+                                                <span className="bg-slate-900 text-slate-400 text-xs font-bold px-3 py-1 rounded-full border border-slate-700">{visibleExpenses.length} records</span>
                                             </div>
-                                            
                                             <div className="flex-1 overflow-y-auto">
                                                 {visibleExpenses.length === 0 ? (
                                                     <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
-                                                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                                                            {renderIcon('wallet', 'w-8 h-8 opacity-50')}
-                                                        </div>
+                                                        {renderIcon('wallet', 'w-8 h-8 opacity-50 mb-4')}
                                                         <p>No expenses recorded yet.</p>
                                                     </div>
                                                 ) : (
                                                     <ul className="divide-y divide-slate-700/50">
                                                         {visibleExpenses.map((expense) => {
-                                                            const payerName = expense.paidBy || expense.paid_by || '?';
-                                                            const payerUser = appUsers.find(u => u.username === payerName);
-                                                            const avatarSrc = payerUser?.avatar;
-                                                            
-                                                            const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
-                                                                year: 'numeric', month: 'short', day: 'numeric', 
-                                                                hour: '2-digit', minute: '2-digit' 
-                                                            });
-
+                                                            const payerUser = appUsers.find(u => u.username === expense.paid_by);
                                                             return (
-                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
+                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex flex-col sm:flex-row justify-between group gap-4">
                                                                     <div className="flex items-start gap-4">
-                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden ${expense.type === 'personal' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                                                                            {avatarSrc ? <img src={avatarSrc} className="w-full h-full object-cover" /> : payerName.substring(0, 2)}
+                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden bg-blue-500/20 text-blue-400 border border-blue-500/30`}>
+                                                                            {payerUser?.avatar ? <img src={payerUser.avatar} className="w-full h-full object-cover" /> : expense.paid_by.substring(0, 2)}
                                                                         </div>
                                                                         <div>
                                                                             <p className="font-bold text-white text-lg">{expense.description}</p>
-                                                                            <p className="text-xs text-slate-400 mt-1">
-                                                                                {expense.type === 'personal' ? 'Personal by' : 'Paid by'} <span className="font-medium text-slate-300">{payerName}</span> • {formattedDateTime}
-                                                                            </p>
+                                                                            <p className="text-xs text-slate-400 mt-1">Paid by <span className="font-medium text-slate-300">{expense.paid_by}</span> • {new Date(expense.timestamp).toLocaleDateString()}</p>
                                                                         </div>
                                                                     </div>
-                                                                    
                                                                     <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
-                                                                        <span className="font-black text-white text-xl tracking-tight">
-                                                                            {formatAmount(expense.amount)}
-                                                                        </span>
-                                                                        
+                                                                        <span className="font-black text-white text-xl">{formatAmount(expense.amount)}</span>
                                                                         {loggedInUser.role === 'admin' && (
-                                                                            <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                            <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 opacity-0 group-hover:opacity-100 hidden sm:block">
                                                                                 {renderIcon('trash', 'w-5 h-5')}
                                                                             </button>
                                                                         )}
                                                                     </div>
-                                                                    {loggedInUser.role === 'admin' && (
-                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="w-full text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20 mt-2 sm:hidden text-sm font-bold flex justify-center gap-2 items-center">
-                                                                            {renderIcon('trash', 'w-4 h-4')} Delete Record
-                                                                        </button>
-                                                                    )}
                                                                 </li>
                                                             );
                                                         })}
@@ -1054,239 +760,349 @@
                                 </div>
                             )}
 
-                            {/* --- KHATA TAB (AMIT & SHIVAM ONLY) --- */}
+                            {/* }
+                            {activeTab === 'personal' && (
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+                                        
+                                        {/* Wallet Balances Form */}
+                                        <div className="bg-slate-800/50 border border-indigo-500/30 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('wallet', "w-5 h-5 text-indigo-400")} My Wallet Balances</h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleSavePersonalBalances} className="space-y-4">
+                                                    <div className="flex gap-4">
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Cash</label>
+                                                            <input type="number" min="0" step="0.01" value={personalBalances.cash} onChange={e => setPersonalBalances({...personalBalances, cash: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Account</label>
+                                                            <input type="number" min="0" step="0.01" value={personalBalances.account} onChange={e => setPersonalBalances({...personalBalances, account: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" />
+                                                        </div>
+                                                    </div>
+                                                    <button type="submit" className={`w-full py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20`}>Save Balances</button>
+                                                </form>
+                                            </div>
+                                            <div className="bg-indigo-900/40 p-5 border-t border-indigo-500/20 text-center">
+                                                <p className="text-xs text-indigo-200 font-bold uppercase mb-1">My Total Available Funds</p>
+                                                <p className="text-2xl font-black text-white">{formatAmount((parseFloat(personalBalances.cash||0) + parseFloat(personalBalances.account||0)))}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('plus', "w-5 h-5 text-indigo-400")} Add Personal Expense</h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleAddExpense} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" required />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Description</label>
+                                                        <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="Souvenir..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" required />
+                                                    </div>
+                                                    <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">Save Expense</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="xl:col-span-2">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
+                                            <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">My Recent Expenses</h2>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto">
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {visibleExpenses.map((expense) => (
+                                                        <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs uppercase border bg-indigo-500/10 text-indigo-400 border-indigo-500/20">P</div>
+                                                                <div>
+                                                                    <p className="font-bold text-white">{expense.description}</p>
+                                                                    <p className="text-xs text-slate-400 mt-1">{new Date(expense.timestamp).toLocaleDateString()}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <span className="font-black text-white text-lg">{formatAmount(expense.amount)}</span>
+                                                                <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2 rounded-lg border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">{renderIcon('trash', 'w-4 h-4')}</button>
+                                                            </div>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* }
+                            {activeTab === 'all_personal' && loggedInUser.role === 'admin' && (
+                                <div className="space-y-6">
+                                    <div className="grid md:grid-cols-2 gap-6">
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">Everyone's Current Balances</h3></div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-sm">
+                                                    <thead className="bg-slate-900/50 text-slate-400 font-bold uppercase text-[10px]">
+                                                        <tr>
+                                                            <th className="px-4 py-3">User</th>
+                                                            <th className="px-4 py-3 text-right">Cash</th>
+                                                            <th className="px-4 py-3 text-right">Account</th>
+                                                            <th className="px-4 py-3 text-right text-white">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-700/50">
+                                                        {appUsers.map(u => {
+                                                            const b = allUserBalances[u.username];
+                                                            return (
+                                                                <tr key={u.id} className="hover:bg-slate-800/30">
+                                                                    <td className="px-4 py-3 font-bold text-white flex items-center gap-2">
+                                                                        <div className="w-6 h-6 rounded-full bg-slate-700 overflow-hidden text-[8px] flex items-center justify-center">{u.avatar ? <img src={u.avatar} className="w-full h-full object-cover"/> : u.username.substring(0,2)}</div>
+                                                                        {u.username}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-right text-slate-300">{formatAmount(b.cash)}</td>
+                                                                    <td className="px-4 py-3 text-right text-slate-300">{formatAmount(b.account)}</td>
+                                                                    <td className="px-4 py-3 text-right font-black text-cyan-400">{formatAmount(b.total)}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-gradient-to-br from-cyan-900 to-slate-900 rounded-2xl p-8 border border-cyan-500/30 shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+                                            <div className="absolute -left-10 -bottom-10 text-cyan-500/10 w-64 h-64">{renderIcon('users', 'w-full h-full')}</div>
+                                            <h3 className="text-cyan-200 text-sm font-bold uppercase tracking-wider mb-2 relative z-10">Grand Total Group Funds</h3>
+                                            <p className="text-5xl font-black text-white relative z-10">{formatAmount(grandTotalFunds)}</p>
+                                            <p className="text-slate-400 text-xs mt-4 relative z-10">Sum of everyone's Cash + Account balances</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                        <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">All Personal Expenses Feed</h3></div>
+                                        <div className="max-h-[400px] overflow-y-auto">
+                                            <ul className="divide-y divide-slate-700/50">
+                                                {visibleExpenses.map((expense) => (
+                                                    <li key={expense.id} className="p-4 flex items-center justify-between hover:bg-slate-800/50">
+                                                        <div>
+                                                            <p className="font-bold text-white">{expense.description}</p>
+                                                            <p className="text-xs text-slate-400 mt-0.5">By <span className="font-bold text-slate-300">{expense.paid_by}</span> • {new Date(expense.timestamp).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <span className="font-black text-white text-lg">{formatAmount(expense.amount)}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* }
                             {activeTab === 'khata' && isKhataEligible && (
                                 <div className="grid xl:grid-cols-3 gap-8">
-                                    {/* Left Column (Input & Summary) */}
                                     <div className="xl:col-span-1 space-y-6">
-                                        <div className="bg-slate-800/50 border border-emerald-500/30 rounded-2xl overflow-hidden shadow-xl">
-                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
-                                                <h2 className="font-bold text-white flex items-center gap-2">
-                                                    {renderIcon('book', "w-5 h-5 text-emerald-400")}
-                                                    My Personal Khata
-                                                </h2>
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('book', "w-5 h-5 text-emerald-400")} Add Khata Entry</h2>
                                             </div>
                                             <div className="p-5">
                                                 <form onSubmit={handleAddKhata} className="space-y-4">
                                                     
-                                                    {/* I Take / I Give Toggles */}
-                                                    <div className="flex gap-3 mb-6">
-                                                        <button 
-                                                            type="button" 
-                                                            onClick={() => setKhataForm({...khataForm, mode: 'take'})}
-                                                            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${khataForm.mode === 'take' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-lg shadow-emerald-500/10' : 'bg-slate-900 text-slate-500 border-slate-700 hover:text-slate-300'}`}
-                                                        >
-                                                            I Take
-                                                        </button>
-                                                        <button 
-                                                            type="button" 
-                                                            onClick={() => setKhataForm({...khataForm, mode: 'give'})}
-                                                            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${khataForm.mode === 'give' ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 shadow-lg shadow-rose-500/10' : 'bg-slate-900 text-slate-500 border-slate-700 hover:text-slate-300'}`}
-                                                        >
-                                                            I Give
-                                                        </button>
+                                                    {/* Reversed Logic: Take = Owe (Red), Give = Owed (Green) */}
+                                                    <div className="flex gap-3 mb-6 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                                                        <button type="button" onClick={() => setKhataForm({...khataForm, mode: 'take'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${khataForm.mode === 'take' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>I Take (I Owe)</button>
+                                                        <button type="button" onClick={() => setKhataForm({...khataForm, mode: 'give'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${khataForm.mode === 'give' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>I Give (Get Back)</button>
                                                     </div>
 
                                                     <div>
-                                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Name</label>
-                                                        <input type="text" value={khataForm.name} onChange={(e) => setKhataForm({...khataForm, name: e.target.value})} placeholder="Person's name..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Name</label>
+                                                        <input type="text" value={khataForm.name} onChange={e => setKhataForm({...khataForm, name: e.target.value})} placeholder="Person's name..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
                                                     </div>
-                                                    
                                                     <div className="flex gap-4">
                                                         <div className="flex-1">
-                                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Amount ({CURRENCY_SYMBOLS[viewCurrency]})</label>
-                                                            <input type="number" min="0.01" step="0.01" value={khataForm.amount} onChange={(e) => setKhataForm({...khataForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                            <input type="number" min="0.01" step="0.01" value={khataForm.amount} onChange={e => setKhataForm({...khataForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
                                                         </div>
                                                         <div className="flex-1">
-                                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Date</label>
-                                                            <input type="date" value={khataForm.date} onChange={(e) => setKhataForm({...khataForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-white" required />
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Date</label>
+                                                            <input type="date" value={khataForm.date} onChange={e => setKhataForm({...khataForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
                                                         </div>
                                                     </div>
-
-                                                    <button type="submit" className={`w-full py-3 mt-4 rounded-xl font-bold transition-all shadow-lg text-white ${khataForm.mode === 'take' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20' : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20'}`}>
-                                                        Save Due
-                                                    </button>
+                                                    <button type="submit" className={`w-full py-3 mt-4 rounded-xl font-bold text-white shadow-lg ${khataForm.mode === 'take' ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'}`}>Save Entry</button>
                                                 </form>
                                             </div>
                                         </div>
 
-                                        {/* Khata Summary */}
-                                        <div className="bg-gradient-to-br from-emerald-900 to-emerald-950 rounded-2xl p-6 border border-emerald-500/30 shadow-xl relative overflow-hidden">
+                                        <div className="bg-gradient-to-br from-emerald-900 to-slate-900 rounded-2xl p-6 border border-emerald-500/30 shadow-xl relative overflow-hidden">
                                             <div className="absolute -right-6 -top-6 text-emerald-500/20 w-32 h-32">{renderIcon('book', 'w-full h-full')}</div>
-                                            <h3 className="text-emerald-300 text-xs font-bold uppercase tracking-wider mb-4 relative z-10">Your Khata Summary</h3>
-                                            
+                                            <h3 className="text-emerald-300 text-xs font-bold uppercase mb-4 relative z-10">Your Khata Summary</h3>
                                             <div className="relative z-10 space-y-4">
-                                                <div className="flex justify-between items-center pb-3 border-b border-emerald-500/20">
-                                                    <span className="text-emerald-100/70 font-medium text-sm">Total I Take:</span>
-                                                    <span className="text-lg font-black text-emerald-400">{formatAmount(khataTotals.take)}</span>
+                                                <div className="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                                                    <span className="text-rose-200 font-medium text-sm">Total I Took (I Owe):</span>
+                                                    <span className="text-lg font-black text-rose-400">{formatAmount(khataTotals.take)}</span>
                                                 </div>
-                                                <div className="flex justify-between items-center pb-3 border-b border-emerald-500/20">
-                                                    <span className="text-emerald-100/70 font-medium text-sm">Total I Give:</span>
-                                                    <span className="text-lg font-black text-rose-400">{formatAmount(khataTotals.give)}</span>
+                                                <div className="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                                                    <span className="text-emerald-200 font-medium text-sm">Total I Gave (To Get):</span>
+                                                    <span className="text-lg font-black text-emerald-400">{formatAmount(khataTotals.give)}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center pt-1">
                                                     <span className="text-white font-bold text-sm">Net Balance:</span>
-                                                    <span className={`text-2xl font-black ${khataTotals.net >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                                                        {khataTotals.net >= 0 ? `+${formatAmount(khataTotals.net)}` : `-${formatAmount(Math.abs(khataTotals.net))}`}
+                                                    <span className={`text-2xl font-black ${khataTotals.net === 0 ? 'text-white' : khataTotals.net > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                        {khataTotals.net === 0 ? 'Settled Up' : khataTotals.net > 0 ? `+${formatAmount(khataTotals.net)}` : `-${formatAmount(Math.abs(khataTotals.net))}`}
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Right Column (Khata Feed) */}
                                     <div className="xl:col-span-2">
-                                        <div className="bg-slate-800/30 border border-emerald-500/20 rounded-2xl overflow-hidden flex flex-col min-h-[500px]">
-                                            <div className="px-6 py-5 border-b border-emerald-500/20 bg-emerald-900/20 flex justify-between items-center">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
+                                            <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
                                                 <h2 className="font-bold text-white">Khata Ledger</h2>
-                                                <span className="bg-emerald-950 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full border border-emerald-500/30">
-                                                    {myKhataExpenses.length} records
-                                                </span>
                                             </div>
-                                            
                                             <div className="flex-1 overflow-y-auto">
-                                                {myKhataExpenses.length === 0 ? (
-                                                    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
-                                                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                                                            {renderIcon('book', 'w-8 h-8 opacity-50')}
-                                                        </div>
-                                                        <p>Your khata is clean!</p>
-                                                    </div>
-                                                ) : (
-                                                    <ul className="divide-y divide-emerald-500/10">
-                                                        {myKhataExpenses.map((expense) => {
-                                                            const isTake = expense.type === 'khata_take';
-                                                            const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
-                                                                year: 'numeric', month: 'short', day: 'numeric'
-                                                            });
-
-                                                            return (
-                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
-                                                                    <div className="flex items-start gap-4">
-                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden border ${isTake ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border-rose-500/30'}`}>
-                                                                            {expense.description.substring(0, 2)}
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="font-bold text-white text-lg">{expense.description}</p>
-                                                                            <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-                                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${isTake ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
-                                                                                    {isTake ? 'I Take' : 'I Give'}
-                                                                                </span>
-                                                                                • {formattedDateTime}
-                                                                            </p>
-                                                                        </div>
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {myKhataExpenses.map((expense) => {
+                                                        const isTake = expense.type === 'khata_take'; // Take = Owe = Red
+                                                        return (
+                                                            <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg border ${isTake ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}>
+                                                                        {expense.description.substring(0, 2)}
                                                                     </div>
-                                                                    
-                                                                    <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
-                                                                        <span className={`font-black text-xl tracking-tight ${isTake ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                                            {isTake ? '+' : '-'}{formatAmount(expense.amount)}
-                                                                        </span>
-                                                                        
-                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
-                                                                            {renderIcon('trash', 'w-5 h-5')}
-                                                                        </button>
+                                                                    <div>
+                                                                        <p className="font-bold text-white text-lg">{expense.description}</p>
+                                                                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${isTake ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                                                                                {isTake ? 'I Took (Owe)' : 'I Gave (Get)'}
+                                                                            </span> • {new Date(expense.timestamp).toLocaleDateString()}
+                                                                        </p>
                                                                     </div>
-                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="w-full text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20 mt-2 sm:hidden text-sm font-bold flex justify-center gap-2 items-center">
-                                                                        {renderIcon('trash', 'w-4 h-4')} Delete Record
-                                                                    </button>
-                                                                </li>
-                                                            );
-                                                        })}
-                                                    </ul>
-                                                )}
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`font-black text-xl ${isTake ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                                        {isTake ? '-' : '+'}{formatAmount(expense.amount)}
+                                                                    </span>
+                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">{renderIcon('trash', 'w-5 h-5')}</button>
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            {/* --- BUSINESS TAB (ADMIN ONLY) --- */}
+                            {/* }
                             {activeTab === 'business' && loggedInUser.role === 'admin' && (
                                 <div className="grid xl:grid-cols-3 gap-8">
-                                    {/* Left Column (Inputs) */}
                                     <div className="xl:col-span-1 space-y-6">
                                         
-                                        {/* Balances Form */}
                                         <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
-                                            <div className="p-4 border-b border-slate-700 bg-slate-800/80">
-                                                <h2 className="font-bold text-white flex items-center gap-2">
-                                                    {renderIcon('wallet', `w-5 h-5 ${t.text}`)} Update Balances
-                                                </h2>
+                                            <div className="p-2 border-b border-slate-700 bg-slate-800/80">
+                                                <div className="flex gap-1 bg-slate-900 p-1 rounded-xl">
+                                                    <button onClick={() => setBizTab('sale')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'sale' ? 'bg-white text-slate-900' : 'text-slate-400 hover:bg-slate-800'}`}>+ Sale</button>
+                                                    <button onClick={() => setBizTab('exp')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'exp' ? 'bg-white text-slate-900' : 'text-slate-400 hover:bg-slate-800'}`}>+ Exp</button>
+                                                    <button onClick={() => setBizTab('bal')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'bal' ? 'bg-white text-slate-900' : 'text-slate-400 hover:bg-slate-800'}`}>+ Balances</button>
+                                                </div>
                                             </div>
-                                            <div className="p-4">
-                                                <form onSubmit={handleSaveBalances} className="space-y-4">
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Personal Cash</label>
-                                                            <input type="number" value={balances.personalCash} onChange={e => setBalances({...balances, personalCash: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" />
+                                            
+                                            <div className="p-5">
+                                                {bizTab === 'sale' && (
+                                                    <form onSubmit={handleAddBizSale} className="space-y-4">
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-[2]">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Product Name</label>
+                                                                <input type="text" value={bizSaleForm.name} onChange={e => setBizSaleForm({...bizSaleForm, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white text-white" required />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Qty</label>
+                                                                <input type="number" min="1" value={bizSaleForm.qty} onChange={e => setBizSaleForm({...bizSaleForm, qty: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white text-white" required />
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-3">
+                                                            <div>
+                                                                <label className="block text-[10px] font-bold text-rose-400 uppercase mb-1">Buy/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.buy} onChange={e => setBizSaleForm({...bizSaleForm, buy: e.target.value})} className="w-full bg-slate-900 border border-rose-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-rose-400 text-white" placeholder="0" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[10px] font-bold text-amber-400 uppercase mb-1">Exp/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.exp} onChange={e => setBizSaleForm({...bizSaleForm, exp: e.target.value})} className="w-full bg-slate-900 border border-amber-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-amber-400 text-white" placeholder="0" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[10px] font-bold text-emerald-400 uppercase mb-1">Sell/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.sell} onChange={e => setBizSaleForm({...bizSaleForm, sell: e.target.value})} className="w-full bg-slate-900 border border-emerald-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-emerald-400 text-white" required placeholder="0" />
+                                                            </div>
                                                         </div>
                                                         <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Personal A/C</label>
-                                                            <input type="number" value={balances.personalAccount} onChange={e => setBalances({...balances, personalAccount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Business Cash</label>
-                                                            <input type="number" value={balances.bizCash} onChange={e => setBalances({...balances, bizCash: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Business A/C</label>
-                                                            <input type="number" value={balances.bizAccount} onChange={e => setBalances({...balances, bizAccount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" />
-                                                        </div>
-                                                    </div>
-                                                    <button type="submit" className={`w-full py-2.5 rounded-lg font-bold transition-all shadow-lg text-white text-sm ${t.main} ${t.hover} ${t.shadow}`}>Save Balances</button>
-                                                </form>
-                                            </div>
-                                        </div>
-
-                                        {/* Add Biz Record Form */}
-                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
-                                            <div className="p-4 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
-                                                <h2 className="font-bold text-white flex items-center gap-2">
-                                                    {renderIcon('plus', `w-5 h-5 ${t.text}`)} Add Business Record
-                                                </h2>
-                                            </div>
-                                            <div className="p-4">
-                                                <form onSubmit={handleAddBizRecord} className="space-y-4">
-                                                    <div className="flex gap-2 mb-4">
-                                                        <button type="button" onClick={() => setBizForm({...bizForm, mode: 'sale'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all border ${bizForm.mode === 'sale' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-slate-900 text-slate-500 border-slate-700'}`}>+ Sale</button>
-                                                        <button type="button" onClick={() => setBizForm({...bizForm, mode: 'exp'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all border ${bizForm.mode === 'exp' ? 'bg-rose-500/20 text-rose-400 border-rose-500/50' : 'bg-slate-900 text-slate-500 border-slate-700'}`}>- Expense</button>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Details</label>
-                                                        <input type="text" value={bizForm.description} onChange={e => setBizForm({...bizForm, description: e.target.value})} placeholder="Client name or Expense type" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" required />
-                                                    </div>
-                                                    <div className="flex gap-4">
-                                                        <div className="flex-1">
-                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Amount</label>
-                                                            <input type="number" min="0" step="0.01" value={bizForm.amount} onChange={e => setBizForm({...bizForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" required />
-                                                        </div>
-                                                        <div className="flex-1">
                                                             <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date</label>
-                                                            <input type="date" value={bizForm.date} onChange={e => setBizForm({...bizForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-white text-white" required />
+                                                            <input type="date" value={bizSaleForm.date} onChange={e => setBizSaleForm({...bizSaleForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
                                                         </div>
-                                                    </div>
-                                                    <button type="submit" className={`w-full py-2.5 mt-2 rounded-lg font-bold transition-all shadow-lg text-white text-sm ${t.main} ${t.hover} ${t.shadow}`}>Save Record</button>
-                                                </form>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-violet-600 hover:bg-violet-500 shadow-lg shadow-violet-600/20">Save Sale</button>
+                                                    </form>
+                                                )}
+
+                                                {bizTab === 'exp' && (
+                                                    <form onSubmit={handleAddBizExp} className="space-y-4">
+                                                        <div>
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Expense Details</label>
+                                                            <input type="text" value={bizExpForm.description} onChange={e => setBizExpForm({...bizExpForm, description: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-1">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Amount</label>
+                                                                <input type="number" step="0.01" value={bizExpForm.amount} onChange={e => setBizExpForm({...bizExpForm, amount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date</label>
+                                                                <input type="date" value={bizExpForm.date} onChange={e => setBizExpForm({...bizExpForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                            </div>
+                                                        </div>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20">Save Business Expense</button>
+                                                    </form>
+                                                )}
+
+                                                {bizTab === 'bal' && (
+                                                    <form onSubmit={handleSaveBizBalances} className="space-y-4">
+                                                        <p className="text-xs text-slate-400 mb-4">Set your current available business funds.</p>
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-1">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Biz Cash</label>
+                                                                <input type="number" step="0.01" value={bizBalances.cash} onChange={e => setBizBalances({...bizBalances, cash: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Biz A/C</label>
+                                                                <input type="number" step="0.01" value={bizBalances.account} onChange={e => setBizBalances({...bizBalances, account: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" />
+                                                            </div>
+                                                        </div>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600">Save Biz Balances</button>
+                                                    </form>
+                                                )}
                                             </div>
                                         </div>
-
                                     </div>
 
-                                    {/* Right Column (Summary & Feed) */}
                                     <div className="xl:col-span-2 space-y-6">
-                                        {/* Business Dashboard Stats */}
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Sales</p>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Revenue</p>
                                                 <p className="text-xl font-black text-emerald-400">{formatAmount(bizTotals.sales)}</p>
                                             </div>
                                             <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Exp</p>
-                                                <p className="text-xl font-black text-rose-400">{formatAmount(bizTotals.exps)}</p>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Costs</p>
+                                                <p className="text-xl font-black text-rose-400">{formatAmount(bizTotals.costs)}</p>
                                             </div>
-                                            <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center col-span-2 md:col-span-2 relative overflow-hidden">
-                                                <div className={`absolute -right-4 -top-4 w-20 h-20 opacity-10 ${t.text}`}>{renderIcon('wallet', 'w-full h-full')}</div>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 relative z-10">Net Profit</p>
+                                            <div className="bg-violet-900/40 p-4 rounded-2xl border border-violet-500/30 text-center col-span-2 relative overflow-hidden">
+                                                <div className={`absolute -right-4 -top-4 w-20 h-20 opacity-10 text-violet-400`}>{renderIcon('briefcase', 'w-full h-full')}</div>
+                                                <p className="text-[10px] font-bold text-violet-300 uppercase mb-1 relative z-10">Net Profit</p>
                                                 <p className={`text-2xl font-black relative z-10 ${bizTotals.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                                     {bizTotals.profit >= 0 ? '+' : '-'}{formatAmount(Math.abs(bizTotals.profit))}
                                                 </p>
@@ -1299,42 +1115,90 @@
                                                 <span className="bg-slate-900 text-slate-400 text-xs font-bold px-3 py-1 rounded-full border border-slate-700">{bizRecords.length} records</span>
                                             </div>
                                             <div className="flex-1 overflow-y-auto">
-                                                {bizRecords.length === 0 ? (
-                                                    <div className="flex flex-col items-center justify-center h-full py-16 text-slate-500">
-                                                        {renderIcon('book', 'w-8 h-8 opacity-50 mb-2')}
-                                                        <p>No business records yet.</p>
-                                                    </div>
-                                                ) : (
-                                                    <ul className="divide-y divide-slate-700/50">
-                                                        {bizRecords.map((expense) => {
-                                                            const isSale = expense.type === 'biz_sale';
-                                                            const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-                                                            return (
-                                                                <li key={expense.id} className="p-4 hover:bg-slate-800/50 transition-colors flex items-center justify-between group">
-                                                                    <div className="flex items-start gap-4">
-                                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${isSale ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
-                                                                            {isSale ? '+S' : '-E'}
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="font-bold text-white text-md">{expense.description}</p>
-                                                                            <p className="text-xs text-slate-400 mt-0.5">{formattedDateTime}</p>
-                                                                        </div>
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {bizRecords.map((expense) => {
+                                                        const isSale = expense.type === 'biz_sale';
+                                                        let name = expense.description;
+                                                        let details = "";
+                                                        if (isSale) {
+                                                            try {
+                                                                const d = JSON.parse(expense.description);
+                                                                name = d.name;
+                                                                details = `${d.qty}x @ ${d.sell} (Cost: ${d.buy+d.exp})`;
+                                                            } catch(e){}
+                                                        }
+                                                        return (
+                                                            <li key={expense.id} className="p-4 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${isSale ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                                                                        {isSale ? '+S' : '-E'}
                                                                     </div>
-                                                                    <div className="flex items-center gap-4">
-                                                                        <span className={`font-black text-lg ${isSale ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                                            {isSale ? '+' : '-'}{formatAmount(expense.amount)}
-                                                                        </span>
-                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2 rounded-lg border border-slate-800 transition-all opacity-0 group-hover:opacity-100">
-                                                                            {renderIcon('trash', 'w-4 h-4')}
-                                                                        </button>
+                                                                    <div>
+                                                                        <p className="font-bold text-white">{name}</p>
+                                                                        <p className="text-xs text-slate-400 mt-0.5">{new Date(expense.timestamp).toLocaleDateString()} {details && `• ${details}`}</p>
                                                                     </div>
-                                                                </li>
-                                                            );
-                                                        })}
-                                                    </ul>
-                                                )}
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`font-black text-lg ${isSale ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                                        {isSale ? '+' : '-'}{formatAmount(expense.amount)}
+                                                                    </span>
+                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2 rounded-lg border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                        {renderIcon('trash', 'w-4 h-4')}
+                                                                    </button>
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- ADMIN & HUB TABS --- */}
+                            {activeTab === 'hub' && (
+                                <div className="space-y-6">
+                                    <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
+                                        <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
+                                        <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
+                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Access our 5TB shared Google Drive! You can instantly upload your photos and videos, or download the full trip collection.</p>
+                                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
+                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/20">{renderIcon('upload', 'w-5 h-5')} Upload Media</a>
+                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-8 py-4 rounded-xl font-bold text-sm shadow-lg">{renderIcon('camera', 'w-5 h-5')} View & Download</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {activeTab === 'admin' && loggedInUser.role === 'admin' && (
+                                <div className="space-y-6">
+                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6">
+                                        <h2 className="text-lg font-bold text-white mb-4">Create User Credentials</h2>
+                                        <form onSubmit={handleCreateFriend} className="flex flex-col sm:flex-row gap-4">
+                                            <input type="text" required value={newFriend.username} onChange={e => setNewFriend({...newFriend, username: e.target.value})} placeholder="Friend's Username" className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white" />
+                                            <input type="text" required value={newFriend.password} onChange={e => setNewFriend({...newFriend, password: e.target.value})} placeholder="Create Password" className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white" />
+                                            <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl font-bold transition-colors">Add User</button>
+                                        </form>
+                                    </div>
+                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
+                                        <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">All Active Accounts</h3></div>
+                                        <ul className="divide-y divide-slate-700">
+                                            {appUsers.map(u => (
+                                                <li key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-800">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white overflow-hidden border border-slate-600">
+                                                            {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover" /> : u.username.substring(0,2).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-white flex items-center gap-2">{u.username} {u.role === 'admin' && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase">Admin</span>}</p>
+                                                            <p className="text-xs text-slate-500 mt-1 font-mono">PWD: {u.role === 'admin' ? '********' : u.password}</p>
+                                                        </div>
+                                                    </div>
+                                                    {u.role !== 'admin' && <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-slate-500 hover:text-red-400 bg-slate-900 rounded-lg border border-slate-700 hover:border-red-500/50">{renderIcon('trash', 'w-5 h-5')}</button>}
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
                                 </div>
                             )}
