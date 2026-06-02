@@ -34,8 +34,7 @@
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkdXJ6eG1zamp3bGh3YXVjYWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTA3ODEsImV4cCI6MjA5NTg4Njc4MX0.e4VAMmx8J7AX3Cx5N5ZRq5-RnY5b4GURzYylLSmXfSY";
         // =========================================================================
 
-
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo } = React;
 
         // Exchange rates (Base INR)
         const EXCHANGE_RATES = { INR: 1, USD: 0.012, EUR: 0.011, GBP: 0.0095 };
@@ -89,27 +88,9 @@
                 if (!expErr && expData) setExpenses(expData);
             };
 
-            // Fetch data initially when Supabase loads and setup Realtime WebSockets
+            // Fetch data initially when Supabase loads
             useEffect(() => {
                 fetchData();
-
-                if (!supabase) return;
-
-                // REALTIME WEBSOCKETS RESTORED FOR GITHUB/VERCEL
-                const usersSub = supabase.channel('users_changes')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, payload => {
-                        fetchData();
-                    }).subscribe();
-
-                const expSub = supabase.channel('expenses_changes')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, payload => {
-                        fetchData();
-                    }).subscribe();
-
-                return () => {
-                    supabase.removeChannel(usersSub);
-                    supabase.removeChannel(expSub);
-                };
             }, [supabase]);
 
             // --- Missing Keys Screen ---
@@ -117,7 +98,6 @@
                 return (
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
                         <div className="bg-red-500/10 border border-red-500 text-red-500 p-6 rounded-2xl max-w-md w-full">
-                            <i data-lucide="alert-triangle" className="w-12 h-12 mx-auto mb-4"></i>
                             <h2 className="text-xl font-bold mb-2">Supabase Keys Missing!</h2>
                             <p className="text-sm mb-4">You need to edit your `index.html` file in GitHub and paste your SUPABASE_URL and SUPABASE_ANON_KEY on lines 28 and 29.</p>
                         </div>
@@ -139,6 +119,7 @@
                     if (error) throw error;
                     setLoggedInUser(data[0]);
                     localStorage.setItem('unimoney_user_id', data[0].id);
+                    await fetchData(); // Refresh data after setup
                 } catch (err) {
                     setAuthError(err.message || "Failed to setup Admin.");
                 }
@@ -218,6 +199,7 @@
                     }]);
                     if (error) throw error;
                     setNewExpense({ amount: '', description: '', paidBy: '' });
+                    await fetchData(); // Manually refresh data to avoid WS errors
                 } catch (err) {
                     showError(err.message || "Failed to add expense.");
                 }
@@ -226,6 +208,7 @@
             const handleDeleteExpense = async (expenseId) => {
                 if (loggedInUser.role !== 'admin') return;
                 await supabase.from('expenses').delete().eq('id', expenseId);
+                await fetchData(); // Manually refresh data to avoid WS errors
             };
 
             const handleCreateFriend = async (e) => {
@@ -242,11 +225,13 @@
                     timestamp: Date.now()
                 }]);
                 setNewFriend({ username: '', password: '' });
+                await fetchData(); // Manually refresh data to avoid WS errors
             };
 
             const handleDeleteUser = async (userId) => {
                 if (loggedInUser.role !== 'admin') return;
                 await supabase.from('app_users').delete().eq('id', userId);
+                await fetchData(); // Manually refresh data to avoid WS errors
             };
 
             // --- Calculations & Settlements ---
@@ -254,7 +239,9 @@
                 if (activeTab === 'group') return expenses.filter(e => e.type === 'group');
                 if (activeTab === 'personal') {
                     if (loggedInUser?.role === 'admin') return expenses.filter(e => e.type === 'personal');
-                    return expenses.filter(e => e.type === 'personal' && e.paidBy === loggedInUser?.username);
+                    
+                    // Use both formats for older records
+                    return expenses.filter(e => e.type === 'personal' && (e.paidBy === loggedInUser?.username || e.paid_by === loggedInUser?.username));
                 }
                 return [];
             }, [expenses, activeTab, loggedInUser]);
@@ -265,7 +252,11 @@
                 const summary = {};
                 appUsers.forEach(u => summary[u.username] = 0);
                 expenses.filter(e => e.type === 'group').forEach(exp => {
-                    if (summary[exp.paidBy] !== undefined) summary[exp.paidBy] += exp.amount;
+                    // FIX: Check BOTH versions of the database column so old data isn't lost
+                    const payerName = exp.paidBy || exp.paid_by;
+                    if (summary[payerName] !== undefined) {
+                        summary[payerName] += exp.amount;
+                    }
                 });
                 return summary;
             }, [expenses, appUsers]);
@@ -602,38 +593,49 @@
                                                     </div>
                                                 ) : (
                                                     <ul className="divide-y divide-slate-700/50">
-                                                        {visibleExpenses.map((expense) => (
-                                                            <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
-                                                                <div className="flex items-start gap-4">
-                                                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg ${expense.type === 'personal' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                                                                        {expense.paidBy ? expense.paidBy.substring(0, 2) : '?'}
+                                                        {visibleExpenses.map((expense) => {
+                                                            // FIX: Handle both new code ('paidBy') and older database inputs ('paid_by')
+                                                            const payerName = expense.paidBy || expense.paid_by || '?';
+                                                            
+                                                            // FIX: Include full Date and exact Time display
+                                                            const formattedDateTime = new Date(expense.timestamp).toLocaleString(undefined, { 
+                                                                year: 'numeric', month: 'short', day: 'numeric', 
+                                                                hour: '2-digit', minute: '2-digit' 
+                                                            });
+
+                                                            return (
+                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between group gap-4">
+                                                                    <div className="flex items-start gap-4">
+                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg ${expense.type === 'personal' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                                                                            {payerName.substring(0, 2)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-bold text-white text-lg">{expense.description}</p>
+                                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                                {expense.type === 'personal' ? 'Personal by' : 'Paid by'} <span className="font-medium text-slate-300">{payerName}</span> • {formattedDateTime}
+                                                                            </p>
+                                                                        </div>
                                                                     </div>
-                                                                    <div>
-                                                                        <p className="font-bold text-white text-lg">{expense.description}</p>
-                                                                        <p className="text-xs text-slate-400 mt-1">
-                                                                            {expense.type === 'personal' ? 'Personal by' : 'Paid by'} <span className="font-medium text-slate-300">{expense.paidBy}</span> • {new Date(expense.timestamp).toLocaleDateString()}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                                
-                                                                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
-                                                                    <span className="font-black text-white text-xl tracking-tight">
-                                                                        {formatAmount(expense.amount)}
-                                                                    </span>
                                                                     
+                                                                    <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
+                                                                        <span className="font-black text-white text-xl tracking-tight">
+                                                                            {formatAmount(expense.amount)}
+                                                                        </span>
+                                                                        
+                                                                        {loggedInUser.role === 'admin' && (
+                                                                            <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                                {renderIcon('trash', 'w-5 h-5')}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                     {loggedInUser.role === 'admin' && (
-                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 transition-all opacity-0 group-hover:opacity-100 hidden sm:block">
-                                                                            {renderIcon('trash', 'w-5 h-5')}
+                                                                        <button onClick={() => handleDeleteExpense(expense.id)} className="w-full text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20 mt-2 sm:hidden text-sm font-bold flex justify-center gap-2 items-center">
+                                                                            {renderIcon('trash', 'w-4 h-4')} Delete Record
                                                                         </button>
                                                                     )}
-                                                                </div>
-                                                                {loggedInUser.role === 'admin' && (
-                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="w-full text-red-400 bg-red-500/10 p-2 rounded-lg border border-red-500/20 mt-2 sm:hidden text-sm font-bold flex justify-center gap-2 items-center">
-                                                                        {renderIcon('trash', 'w-4 h-4')} Delete Record
-                                                                    </button>
-                                                                )}
-                                                            </li>
-                                                        ))}
+                                                                </li>
+                                                            );
+                                                        })}
                                                     </ul>
                                                 )}
                                             </div>
