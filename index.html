@@ -109,10 +109,22 @@
                 // Fetch Users
                 const { data: usersData, error: usersErr } = await supabase.from('app_users').select('*');
                 if (!usersErr && usersData) {
-                    setAppUsers(usersData);
+                    // DEDUPLICATION FILTER: Automatically removes duplicate admins/users to fix math errors
+                    const uniqueUsersMap = new Map();
+                    usersData.forEach(user => {
+                        const usernameLower = user.username.toLowerCase();
+                        if (!uniqueUsersMap.has(usernameLower) || user.role === 'admin') {
+                            uniqueUsersMap.set(usernameLower, user);
+                        }
+                    });
+                    const uniqueUsers = Array.from(uniqueUsersMap.values());
+                    
+                    setAppUsers(uniqueUsers);
+                    
                     const savedUserId = localStorage.getItem('unimoney_user_id');
                     if (savedUserId) {
-                        const foundUser = usersData.find(u => String(u.id) === String(savedUserId));
+                        // Find the user even if the ID changed due to deduplication
+                        const foundUser = uniqueUsers.find(u => String(u.id) === String(savedUserId)) || uniqueUsers[0]; // fallback
                         if (foundUser) {
                             const localAvatar = localStorage.getItem(`unimoney_avatar_${foundUser.id}`);
                             if (localAvatar) foundUser.avatar = localAvatar;
