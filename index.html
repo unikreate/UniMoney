@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>UniMoney Expense Manager</title>
@@ -15,19 +15,18 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
     <style>
-        body { background-color: #0f172a; margin: 0; overscroll-behavior-y: none; padding-bottom: env(safe-area-inset-bottom); }
+        /* Custom scrollbar and styling for dark native app feel */
+        body { background-color: #0f172a; margin: 0; overscroll-behavior-y: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .glass-panel { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(16px); border-top: 1px solid rgba(255,255,255,0.05); }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
 
+        /* Modern Smooth Tab Transition Animation */
         @keyframes fadeSlideUp {
             0% { opacity: 0; transform: translateY(15px); }
             100% { opacity: 1; transform: translateY(0); }
         }
-        .animate-tab { animation: fadeSlideUp 0.3s ease-out forwards; }
-        
-        /* Hide sidebar scrollbar */
-        aside::-webkit-scrollbar { display: none; }
+        .animate-tab { animation: fadeSlideUp 0.4s ease-out forwards; }
     </style>
 </head>
 <body>
@@ -40,11 +39,16 @@
         const SUPABASE_URL = "https://pdurzxmsjjwlhwaucakl.supabase.co"; 
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkdXJ6eG1zamp3bGh3YXVjYWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTA3ODEsImV4cCI6MjA5NTg4Njc4MX0.e4VAMmx8J7AX3Cx5N5ZRq5-RnY5b4GURzYylLSmXfSY";
 
+        // Gemini API Configuration for AI Features
+        const apiKey = ""; 
+
+        // Hardcoded Google Drive 5TB Storage Link
         const GDRIVE_LINK = "https://drive.google.com/drive/folders/1mLGkLtoEXu9h34UHdBrP6d39UdJfHVIz?usp=drive_link";
         // =========================================================================
 
         const { useState, useEffect, useMemo } = React;
 
+        // Exchange rates (Base INR)
         const EXCHANGE_RATES = { INR: 1, USD: 0.012, EUR: 0.011, GBP: 0.0095 };
         const CURRENCY_SYMBOLS = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
 
@@ -52,6 +56,8 @@
             blue: { main: 'bg-blue-600', hover: 'hover:bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/30', shadow: 'shadow-blue-500/20', light: 'bg-blue-500/20' },
             indigo: { main: 'bg-indigo-600', hover: 'hover:bg-indigo-500', text: 'text-indigo-400', border: 'border-indigo-500/30', shadow: 'shadow-indigo-500/20', light: 'bg-indigo-500/20' },
             emerald: { main: 'bg-emerald-600', hover: 'hover:bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/30', shadow: 'shadow-emerald-500/20', light: 'bg-emerald-500/20' },
+            rose: { main: 'bg-rose-600', hover: 'hover:bg-rose-500', text: 'text-rose-400', border: 'border-rose-500/30', shadow: 'shadow-rose-500/20', light: 'bg-rose-500/20' },
+            fuchsia: { main: 'bg-fuchsia-600', hover: 'hover:bg-fuchsia-500', text: 'text-fuchsia-400', border: 'border-fuchsia-500/30', shadow: 'shadow-fuchsia-500/20', light: 'bg-fuchsia-500/20' },
             amber: { main: 'bg-amber-600', hover: 'hover:bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/30', shadow: 'shadow-amber-500/20', light: 'bg-amber-500/20' },
         };
 
@@ -59,7 +65,7 @@
             const keysAreMissing = SUPABASE_URL.includes("YOUR_SUPABASE_URL_HERE") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE_ANON_KEY_HERE");
 
             const [supabase, setSupabase] = useState(null);
-            const [isLoading, setIsLoading] = useState(true); // Fixes the "stuck on setup" issue
+            const [isLoading, setIsLoading] = useState(true); // Loading state to fix stuck bug
             const [appUsers, setAppUsers] = useState([]);
             const [expenses, setExpenses] = useState([]);
             const [loggedInUser, setLoggedInUser] = useState(null);
@@ -69,23 +75,25 @@
             const [authError, setAuthError] = useState('');
 
             const [activeTab, setActiveTab] = useState('group');
-            // Added 'source' for deduction logic
             const [newExpense, setNewExpense] = useState({ amount: '', description: '', paidBy: '', source: 'account' });
             const [newFriend, setNewFriend] = useState({ username: '', password: '' });
             const [uiError, setUiError] = useState('');
             const [viewCurrency, setViewCurrency] = useState('INR');
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
             const [appTheme, setAppTheme] = useState(localStorage.getItem('unimoney_theme') || 'blue');
             const t = THEMES[appTheme] || THEMES.blue;
 
-            // Business & Personal Balances
-            const [bizTab, setBizTab] = useState('sale');
+            // Business Form States
+            const [bizTab, setBizTab] = useState('sale'); 
             const [bizSaleForm, setBizSaleForm] = useState({ name: '', qty: 1, buy: '', exp: 0, sell: '', date: new Date().toISOString().split('T')[0] });
             const [bizExpForm, setBizExpForm] = useState({ description: '', amount: '', source: 'account', date: new Date().toISOString().split('T')[0] });
-            
-            const [bizBalances, setBizBalances] = useState({ cash: 0, account: 0 });
-            const [personalBalances, setPersonalBalances] = useState({ cash: 0, account: 0 });
-            
+            const [bizBalances, setBizBalances] = useState({ cash: '', account: '' });
+
+            // Personal Balances Form State
+            const [personalBalances, setPersonalBalances] = useState({ cash: '', account: '' });
+
+            // Khata Form State
             const [khataForm, setKhataForm] = useState({ mode: 'take', name: '', amount: '', date: new Date().toISOString().split('T')[0] });
 
             useEffect(() => {
@@ -98,42 +106,47 @@
             const fetchData = async () => {
                 if (!supabase) return;
 
+                // Fetch Users
                 const { data: usersData, error: usersErr } = await supabase.from('app_users').select('*');
                 if (!usersErr && usersData) {
                     setAppUsers(usersData);
                     const savedUserId = localStorage.getItem('unimoney_user_id');
                     if (savedUserId) {
                         const foundUser = usersData.find(u => String(u.id) === String(savedUserId));
-                        if (foundUser) setLoggedInUser(foundUser);
+                        if (foundUser) {
+                            const localAvatar = localStorage.getItem(`unimoney_avatar_${foundUser.id}`);
+                            if (localAvatar) foundUser.avatar = localAvatar;
+                            setLoggedInUser(foundUser);
+                        }
                     }
                 }
 
+                // Fetch Expenses
                 const { data: expData, error: expErr } = await supabase.from('expenses').select('*').order('timestamp', { ascending: false });
                 if (!expErr && expData) setExpenses(expData);
-                
-                setIsLoading(false); // Stop loading once data is fetched
+
+                setIsLoading(false); // Done loading
             };
 
             useEffect(() => { fetchData(); }, [supabase]);
 
-            // Sync Balances from DB dynamically
+            // Sync Balances from DB
             useEffect(() => {
                 if (loggedInUser && expenses.length > 0) {
-                    // Sync Personal Balances
-                    const myPersonalBal = expenses.filter(e => e.type === 'user_balance' && e.paid_by === loggedInUser.username);
-                    if (myPersonalBal.length > 0) {
+                    const myPersonalRecords = expenses.filter(e => e.type === 'user_balance' && e.paid_by === loggedInUser.username);
+                    if (myPersonalRecords.length > 0) {
                         try {
-                            const parsed = JSON.parse(myPersonalBal[0].description);
-                            setPersonalBalances({ cash: parsed.cash || 0, account: parsed.account || 0 });
+                            const parsed = JSON.parse(myPersonalRecords[0].description);
+                            setPersonalBalances({ cash: parsed.cash || '', account: parsed.account || '' });
                         } catch(e) {}
                     }
-                    // Sync Biz Balances (Admin only)
+
                     if (loggedInUser.role === 'admin') {
-                        const myBizBal = expenses.filter(e => e.type === 'biz_bal' && e.paid_by === loggedInUser.username);
-                        if (myBizBal.length > 0) {
+                        const myBizRecords = expenses.filter(e => e.type === 'biz_bal' && e.paid_by === loggedInUser.username);
+                        if (myBizRecords.length > 0) {
                             try {
-                                const parsed = JSON.parse(myBizBal[0].description);
-                                setBizBalances({ cash: parsed.cash || 0, account: parsed.account || 0 });
+                                const parsed = JSON.parse(myBizRecords[0].description);
+                                setBizBalances({ cash: parsed.cash || '', account: parsed.account || '' });
                             } catch(e) {}
                         }
                     }
@@ -143,17 +156,16 @@
             const handleSetupAdmin = async (e) => {
                 e.preventDefault();
                 setAuthError('');
-                const reqUsername = setupForm.username.trim().toLowerCase();
                 
-                // Strict Admin Lock
-                if (reqUsername !== 'amit') {
-                    return setAuthError("Security Lock: Only the developer 'Amit' can initialize the Master Admin workspace.");
+                // Strictly lock to Amit
+                if (setupForm.username.trim().toLowerCase() !== 'amit') {
+                    return setAuthError("Security Lock: Only the developer 'Amit' can initialize the Master Admin.");
                 }
 
                 try {
-                    // Double check if admin exists to prevent duplicates
+                    // Check if admin exists to prevent 2 admins
                     const { data: existingAdmins } = await supabase.from('app_users').select('*').eq('role', 'admin');
-                    if (existingAdmins && existingAdmins.length > 0) return setAuthError("Admin account already exists in database.");
+                    if (existingAdmins && existingAdmins.length > 0) return setAuthError("Admin already exists!");
 
                     const { data, error } = await supabase.from('app_users').insert([{
                         username: setupForm.username.trim(),
@@ -179,13 +191,28 @@
                     localStorage.setItem('unimoney_user_id', foundUser.id);
                     setLoginForm({ username: '', password: '' });
                     setActiveTab('group');
-                } else { setAuthError("Invalid credentials."); }
+                } else { setAuthError("Invalid username or password."); }
             };
 
             const handleLogout = () => {
                 setLoggedInUser(null);
                 localStorage.removeItem('unimoney_user_id');
                 setActiveTab('group');
+                setIsMobileMenuOpen(false);
+            };
+
+            const handleAvatarUpload = async (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const base64String = reader.result;
+                    setLoggedInUser(prev => ({ ...prev, avatar: base64String }));
+                    localStorage.setItem(`unimoney_avatar_${loggedInUser.id}`, base64String); 
+                    const { error } = await supabase.from('app_users').update({ avatar: base64String }).eq('id', loggedInUser.id);
+                    if(!error) await fetchData();
+                };
+                reader.readAsDataURL(file);
             };
 
             const formatAmount = (baseAmount) => {
@@ -233,20 +260,23 @@
                         timestamp: Date.now()
                     }]);
 
-                    // DEDUCTION LOGIC FOR PERSONAL EXPENSE
+                    // DEDUCT FROM PERSONAL BALANCES
                     if (expenseType === 'personal') {
-                        const updatedBalances = { ...personalBalances };
+                        const updatedBalances = { 
+                            cash: parseFloat(personalBalances.cash || 0), 
+                            account: parseFloat(personalBalances.account || 0) 
+                        };
                         if (newExpense.source === 'cash') {
-                            updatedBalances.cash = parseFloat((updatedBalances.cash - amountInBaseINR).toFixed(2));
+                            updatedBalances.cash -= amountInBaseINR;
                         } else {
-                            updatedBalances.account = parseFloat((updatedBalances.account - amountInBaseINR).toFixed(2));
+                            updatedBalances.account -= amountInBaseINR;
                         }
                         setPersonalBalances(updatedBalances);
                         await pushBalanceUpdate('user_balance', updatedBalances);
                     }
 
                     setNewExpense({ amount: '', description: '', paidBy: '', source: 'account' });
-                    showError(expenseType === 'personal' ? `✅ Expense Added & Deducted from ${newExpense.source}!` : "✅ Expense Added!");
+                    showError(expenseType === 'personal' ? `✅ Expense Deducted from ${newExpense.source}!` : "✅ Expense Added!");
                     await fetchData(); 
                 } catch (err) { showError("Failed to add expense."); }
             };
@@ -257,15 +287,77 @@
                 const account = parseFloat(personalBalances.account || 0);
                 try {
                     await pushBalanceUpdate('user_balance', { cash, account });
-                    showError("✅ Wallet Balances Synced to Cloud!");
+                    showError("✅ Wallet Balances Saved to Cloud!");
                     await fetchData();
-                } catch(err) { showError("Failed to sync balances."); }
+                } catch(err) { showError("Failed to save balances"); }
+            };
+
+            const handleAddKhata = async (e) => {
+                e.preventDefault();
+                const amountNum = parseFloat(khataForm.amount);
+                if (!amountNum || !khataForm.name) return showError("Please fill name and amount.");
+
+                const baseRate = EXCHANGE_RATES[viewCurrency];
+                const amountInBaseINR = amountNum / baseRate;
+                const timestamp = new Date(khataForm.date).getTime() || Date.now();
+
+                try {
+                    await supabase.from('expenses').insert([{
+                        type: khataForm.mode === 'take' ? 'khata_take' : 'khata_give',
+                        amount: amountInBaseINR,
+                        description: khataForm.name,
+                        paid_by: loggedInUser.username,
+                        timestamp: timestamp
+                    }]);
+                    setKhataForm({ ...khataForm, name: '', amount: '' });
+                    showError("✅ Khata Entry Saved!");
+                    await fetchData(); 
+                } catch (err) { showError("Failed to add Khata entry."); }
+            };
+
+            const handleAddBizSale = async (e) => {
+                e.preventDefault();
+                const qty = parseFloat(bizSaleForm.qty || 1);
+                const buy = parseFloat(bizSaleForm.buy || 0);
+                const exp = parseFloat(bizSaleForm.exp || 0);
+                const sell = parseFloat(bizSaleForm.sell || 0);
+
+                if (!bizSaleForm.name || !sell) return showError("Product Name and Sell Price required.");
+
+                const baseRate = EXCHANGE_RATES[viewCurrency];
+                const totalRev = (qty * sell) / baseRate;
+                const totalCost = (qty * (buy + exp)) / baseRate;
+                const timestamp = new Date(bizSaleForm.date).getTime() || Date.now();
+                const payload = { name: bizSaleForm.name, qty, buy, exp, sell, totalRev, totalCost };
+
+                try {
+                    await supabase.from('expenses').insert([{
+                        type: 'biz_sale',
+                        amount: totalRev,
+                        description: JSON.stringify(payload),
+                        paid_by: loggedInUser.username,
+                        timestamp: timestamp
+                    }]);
+                    
+                    // Add profit to biz account
+                    const netProfit = totalRev - totalCost;
+                    const updatedBizBalances = { 
+                        cash: parseFloat(bizBalances.cash || 0), 
+                        account: parseFloat(bizBalances.account || 0) + netProfit 
+                    };
+                    setBizBalances(updatedBizBalances);
+                    await pushBalanceUpdate('biz_bal', updatedBizBalances);
+
+                    setBizSaleForm({ ...bizSaleForm, name: '', buy: '', sell: '' });
+                    showError("✅ Sale Saved & Profit added to A/C!");
+                    await fetchData(); 
+                } catch (err) { showError("Failed to add sale record."); }
             };
 
             const handleAddBizExp = async (e) => {
                 e.preventDefault();
                 const amountNum = parseFloat(bizExpForm.amount);
-                if (!amountNum || !bizExpForm.description) return showError("Please fill details.");
+                if (!amountNum || !bizExpForm.description) return showError("Please fill description and amount.");
 
                 const baseRate = EXCHANGE_RATES[viewCurrency];
                 const amountInBaseINR = amountNum / baseRate;
@@ -280,18 +372,21 @@
                         timestamp: timestamp
                     }]);
 
-                    // DEDUCTION LOGIC FOR BUSINESS EXPENSE
-                    const updatedBizBalances = { ...bizBalances };
+                    // DEDUCT FROM BIZ BALANCES
+                    const updatedBizBalances = { 
+                        cash: parseFloat(bizBalances.cash || 0), 
+                        account: parseFloat(bizBalances.account || 0) 
+                    };
                     if (bizExpForm.source === 'cash') {
-                        updatedBizBalances.cash = parseFloat((updatedBizBalances.cash - amountInBaseINR).toFixed(2));
+                        updatedBizBalances.cash -= amountInBaseINR;
                     } else {
-                        updatedBizBalances.account = parseFloat((updatedBizBalances.account - amountInBaseINR).toFixed(2));
+                        updatedBizBalances.account -= amountInBaseINR;
                     }
                     setBizBalances(updatedBizBalances);
                     await pushBalanceUpdate('biz_bal', updatedBizBalances);
 
                     setBizExpForm({ description: '', amount: '', date: new Date().toISOString().split('T')[0], source: 'account' });
-                    showError(`✅ Business Expense Saved & Deducted from ${bizExpForm.source}!`);
+                    showError(`✅ Business Expense Deducted from ${bizExpForm.source}!`);
                     await fetchData(); 
                 } catch (err) { showError("Failed to add business record."); }
             };
@@ -307,49 +402,15 @@
                 } catch(err) { showError("Failed to sync biz balances."); }
             };
 
-            const handleAddBizSale = async (e) => {
-                e.preventDefault();
-                const qty = parseFloat(bizSaleForm.qty || 1);
-                const buy = parseFloat(bizSaleForm.buy || 0);
-                const exp = parseFloat(bizSaleForm.exp || 0);
-                const sell = parseFloat(bizSaleForm.sell || 0);
-                if (!bizSaleForm.name || !sell) return showError("Product Name and Sell Price required.");
+            const handleDeleteExpense = async (expenseId) => {
+                const expense = expenses.find(e => e.id === expenseId);
+                const isKhataOwner = (expense?.type === 'khata_take' || expense?.type === 'khata_give') && expense.paid_by === loggedInUser?.username;
 
-                const baseRate = EXCHANGE_RATES[viewCurrency];
-                const totalRev = (qty * sell) / baseRate;
-                const totalCost = (qty * (buy + exp)) / baseRate;
-                const payload = { name: bizSaleForm.name, qty, buy, exp, sell, totalRev, totalCost };
-
-                try {
-                    await supabase.from('expenses').insert([{ type: 'biz_sale', amount: totalRev, description: JSON.stringify(payload), paid_by: loggedInUser.username, timestamp: new Date(bizSaleForm.date).getTime() }]);
-                    
-                    // Add profit to business balance automatically upon sale
-                    const netProfit = totalRev - totalCost;
-                    const updatedBizBalances = { ...bizBalances, account: parseFloat((bizBalances.account + netProfit).toFixed(2)) };
-                    setBizBalances(updatedBizBalances);
-                    await pushBalanceUpdate('biz_bal', updatedBizBalances);
-
-                    setBizSaleForm({ ...bizSaleForm, name: '', buy: '', sell: '' });
-                    showError(`✅ Sale Saved! Added profit to A/C.`);
-                    await fetchData(); 
-                } catch (err) { showError("Failed to add sale record."); }
-            };
-
-            const handleAddKhata = async (e) => {
-                e.preventDefault();
-                const amountInBaseINR = parseFloat(khataForm.amount) / EXCHANGE_RATES[viewCurrency];
-                await supabase.from('expenses').insert([{ type: khataForm.mode === 'take' ? 'khata_take' : 'khata_give', amount: amountInBaseINR, description: khataForm.name, paid_by: loggedInUser.username, timestamp: new Date(khataForm.date).getTime() }]);
-                setKhataForm({ ...khataForm, name: '', amount: '' });
-                showError("✅ Khata Entry Saved!");
+                if (loggedInUser.role !== 'admin' && !isKhataOwner) return;
+                await supabase.from('expenses').delete().eq('id', expenseId);
                 await fetchData(); 
             };
 
-            const handleDeleteExpense = async (id) => {
-                await supabase.from('expenses').delete().eq('id', id);
-                await fetchData(); 
-            };
-
-            // Role Based Visibility
             const visibleExpenses = useMemo(() => {
                 if (activeTab === 'group') return expenses.filter(e => e.type === 'group');
                 if (activeTab === 'personal') return expenses.filter(e => e.type === 'personal' && e.paid_by === loggedInUser?.username);
@@ -364,7 +425,8 @@
                 const summary = {};
                 appUsers.forEach(u => summary[u.username] = 0);
                 expenses.filter(e => e.type === 'group').forEach(exp => {
-                    if (summary[exp.paid_by] !== undefined) summary[exp.paid_by] += exp.amount;
+                    const payerName = exp.paid_by;
+                    if (summary[payerName] !== undefined) summary[payerName] += exp.amount;
                 });
                 return summary;
             }, [expenses, appUsers]);
@@ -395,60 +457,151 @@
                 return transactions;
             }, [groupExpensesByPerson, groupTotal, appUsers, perPersonShare]);
 
+            // All Users' Balances (Admin only visibility)
+            const allUserBalances = useMemo(() => {
+                const bal = {};
+                appUsers.forEach(u => bal[u.username] = { cash: 0, account: 0, total: 0 });
+
+                const sorted = [...expenses].reverse();
+                sorted.filter(e => e.type === 'user_balance').forEach(e => {
+                    try {
+                        const parsed = JSON.parse(e.description);
+                        if (bal[e.paid_by]) {
+                            bal[e.paid_by].cash = parsed.cash || 0;
+                            bal[e.paid_by].account = parsed.account || 0;
+                            bal[e.paid_by].total = (parsed.cash || 0) + (parsed.account || 0);
+                        }
+                    } catch(err) {}
+                });
+                return bal;
+            }, [expenses, appUsers]);
+
             const isKhataEligible = ['amit', 'shivam'].includes(loggedInUser?.username?.toLowerCase());
+            const myKhataExpenses = useMemo(() => {
+                return expenses.filter(e => (e.type === 'khata_take' || e.type === 'khata_give') && e.paid_by === loggedInUser?.username);
+            }, [expenses, loggedInUser]);
+
+            const khataTotals = useMemo(() => {
+                let take = 0; 
+                let give = 0; 
+                myKhataExpenses.forEach(e => {
+                    if (e.type === 'khata_take') take += e.amount;
+                    if (e.type === 'khata_give') give += e.amount;
+                });
+                return { take, give, net: give - take };
+            }, [myKhataExpenses]);
+
+            const bizRecords = useMemo(() => {
+                return expenses.filter(e => (e.type === 'biz_sale' || e.type === 'biz_exp') && e.paid_by === loggedInUser?.username);
+            }, [expenses, loggedInUser]);
+
+            const bizTotals = useMemo(() => {
+                let sales = 0;
+                let cogs = 0; 
+                let exps = 0;
+                bizRecords.forEach(e => {
+                    if (e.type === 'biz_sale') {
+                        try {
+                            const data = JSON.parse(e.description);
+                            sales += data.totalRev || 0;
+                            cogs += data.totalCost || 0;
+                        } catch(err) { sales += e.amount; }
+                    }
+                    if (e.type === 'biz_exp') exps += e.amount;
+                });
+                return { sales, costs: cogs + exps, profit: sales - (cogs + exps) };
+            }, [bizRecords]);
+
+            const getThemeClasses = () => {
+                switch(activeTab) {
+                    case 'group': return { bg: 'bg-slate-900' };
+                    case 'personal': return { bg: 'bg-indigo-950' };
+                    case 'all_personal': return { bg: 'bg-cyan-950' };
+                    case 'hub': return { bg: 'bg-fuchsia-950' };
+                    case 'khata': return { bg: 'bg-emerald-950' };
+                    case 'business': return { bg: 'bg-violet-950' };
+                    case 'admin': return { bg: 'bg-amber-950' };
+                    default: return { bg: 'bg-slate-900' };
+                }
+            };
+            const themeConfig = getThemeClasses();
 
             const renderIcon = (name, className) => {
                 const icons = {
                     users: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
                     wallet: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
                     shield: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+                    plus: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>,
+                    trash: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
+                    menu: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>,
+                    close: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+                    arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
                     camera: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
                     book: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>,
-                    briefcase: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>,
-                    trash: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
-                    logOut: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
-                    arrow: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>,
+                    briefcase: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
                 };
                 return icons[name] || null;
             };
 
-            const NavItem = ({ id, icon, label, isMobile }) => {
-                const isActive = activeTab === id;
-                if (isMobile) {
-                    return (
-                        <button onClick={() => setActiveTab(id)} className={`flex flex-col items-center justify-center w-full space-y-1 ${isActive ? t.text : 'text-slate-500 hover:text-slate-300'}`}>
-                            {renderIcon(icon, `w-6 h-6 ${isActive ? 'scale-110' : ''} transition-transform`)}
-                            <span className="text-[10px] font-medium">{label}</span>
-                        </button>
-                    );
-                }
-                return (
-                    <button onClick={() => setActiveTab(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? `${t.main} text-white shadow-lg` : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-                        {renderIcon(icon, "w-5 h-5")}
-                        <span className="font-medium text-sm">{label}</span>
-                    </button>
-                );
-            };
+            const NavItem = ({ id, icon, label }) => (
+                <button 
+                    onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                        activeTab === id 
+                        ? `${t.main} text-white shadow-lg ${t.shadow}` 
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                    {renderIcon(icon, "w-5 h-5")}
+                    <span className="font-medium text-sm">{label}</span>
+                </button>
+            );
 
-            // Loading state prevents flashing setup screen before DB confirms users exist
-            if (isLoading) {
-                return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-bold text-lg">Loading UniMoney...</div>;
+            if (keysAreMissing) {
+                return (
+                    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+                        <div className="bg-red-500/10 border border-red-500 text-red-500 p-6 rounded-2xl max-w-md w-full">
+                            <h2 className="text-xl font-bold mb-2">Supabase Keys Missing!</h2>
+                            <p className="text-sm mb-4">You need to edit your code to paste your SUPABASE_URL and SUPABASE_ANON_KEY.</p>
+                        </div>
+                    </div>
+                );
             }
 
-            // Setup Screen Component
+            // Prevent sticking on setup screen before DB is checked
+            if (isLoading) {
+                return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Workspace...</div>;
+            }
+
             if (!loggedInUser) {
                 const hasAdmin = appUsers.some(u => u.role === 'admin');
                 return (
                     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-                        <div className="w-full max-w-sm bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
-                            <h1 className="text-2xl font-bold text-center text-white mb-2">UniMoney</h1>
-                            <p className="text-slate-400 text-center text-sm mb-8">{hasAdmin ? "Workspace Login" : "Initialize Master Admin"}</p>
-                            {authError && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl text-sm mb-6 text-center leading-snug">{authError}</div>}
-                            <form onSubmit={hasAdmin ? handleLogin : handleSetupAdmin} className="space-y-4">
-                                <input type="text" required value={hasAdmin ? loginForm.username : setupForm.username} onChange={e => hasAdmin ? setLoginForm({...loginForm, username: e.target.value}) : setSetupForm({...setupForm, username: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Username" />
-                                <input type="password" required value={hasAdmin ? loginForm.password : setupForm.password} onChange={e => hasAdmin ? setLoginForm({...loginForm, password: e.target.value}) : setSetupForm({...setupForm, password: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Password" />
-                                <button type="submit" className={`w-full ${t.main} text-white py-3 rounded-xl font-bold transition-colors mt-6`}>{hasAdmin ? "Secure Login" : "Initialize Admin (Amit)"}</button>
-                            </form>
+                        <div className="w-full max-w-sm">
+                            <div className="bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
+                                <div className={`w-16 h-16 ${t.light} rounded-2xl flex items-center justify-center mx-auto mb-6 ${t.text}`}>
+                                    {hasAdmin ? renderIcon('shield', 'w-8 h-8') : renderIcon('users', 'w-8 h-8')}
+                                </div>
+                                <h1 className="text-2xl font-bold text-center text-white mb-2">UniMoney</h1>
+                                <p className="text-slate-400 text-center text-sm mb-8">{hasAdmin ? "Welcome back to your workspace" : "Create Master Admin"}</p>
+
+                                {authError && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl text-sm mb-6 text-center">{authError}</div>}
+
+                                <form onSubmit={hasAdmin ? handleLogin : handleSetupAdmin} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Username</label>
+                                        <input type="text" required value={hasAdmin ? loginForm.username : setupForm.username} onChange={e => hasAdmin ? setLoginForm({...loginForm, username: e.target.value}) : setSetupForm({...setupForm, username: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter username" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Password</label>
+                                        <input type="password" required value={hasAdmin ? loginForm.password : setupForm.password} onChange={e => hasAdmin ? setLoginForm({...loginForm, password: e.target.value}) : setSetupForm({...setupForm, password: e.target.value})} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••" />
+                                    </div>
+                                    <button type="submit" className={`w-full ${t.main} ${t.hover} text-white py-3 rounded-xl font-bold transition-colors mt-6 shadow-lg ${t.shadow}`}>
+                                        {hasAdmin ? "Secure Login" : "Initialize Admin (Amit)"}
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 );
@@ -456,228 +609,638 @@
 
             return (
                 <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden font-sans">
-                    {/* Desktop Sidebar */}
-                    <aside className="hidden md:flex flex-col w-64 bg-[#0b1121] border-r border-slate-800 shrink-0">
-                        <div className="p-6 border-b border-slate-800">
-                            <h1 className="text-2xl font-black text-white tracking-tight">UniMoney<span className={t.text}>.</span></h1>
-                            <p className="text-xs text-slate-500 mt-1 capitalize font-medium">{loggedInUser.username} • {loggedInUser.role}</p>
+
+                    {/* Mobile Header */}
+                    <div className="md:hidden fixed top-0 left-0 right-0 h-16 glass-panel z-40 flex justify-between items-center px-4 border-b border-slate-800">
+                        <div className="flex items-center gap-3 font-bold text-white">
+                            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-600 bg-slate-800 flex items-center justify-center">
+                                {loggedInUser.avatar ? <img src={loggedInUser.avatar} className="w-full h-full object-cover" /> : <span className="text-xs">{loggedInUser.username.substring(0,2).toUpperCase()}</span>}
+                            </div>
+                            <span className="tracking-tight text-lg">UniMoney</span>
                         </div>
-                        <div className="flex-1 p-4 space-y-2 overflow-y-auto">
+                        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-300">
+                            {isMobileMenuOpen ? renderIcon('close', 'w-6 h-6') : renderIcon('menu', 'w-6 h-6')}
+                        </button>
+                    </div>
+
+                    {/* Sidebar */}
+                    <aside className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-[#0b1121] border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+
+                        <div className="p-6 pt-20 md:pt-6 border-b border-slate-800">
+                            <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
+                                <div className="relative">
+                                    <div className={`w-12 h-12 ${t.main} rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg overflow-hidden border-2 border-transparent`}>
+                                        {loggedInUser.avatar ? <img src={loggedInUser.avatar} className="w-full h-full object-cover" /> : loggedInUser.username.substring(0,2).toUpperCase()}
+                                    </div>
+                                    <label className="absolute -bottom-1 -right-1 bg-slate-700 hover:bg-indigo-500 border border-slate-600 rounded-full p-1.5 cursor-pointer shadow-lg z-10" title="Upload Photo">
+                                        {renderIcon('camera', 'w-3 h-3 text-white')}
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                                    </label>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Profile</p>
+                                    <p className="font-bold text-white truncate text-lg">{loggedInUser.username}</p>
+                                </div>
+                                {loggedInUser.role === 'admin' && <span className="bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-1 rounded border border-amber-500/20">ADMIN</span>}
+                            </div>
+                        </div>
+
+                        <div className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                             <NavItem id="group" icon="users" label="Shared Trip" />
                             <NavItem id="personal" icon="wallet" label="My Personal" />
-                            {isKhataEligible && <NavItem id="khata" icon="book" label="My Khata" />}
                             {loggedInUser.role === 'admin' && (
                                 <>
-                                    <div className="my-4 border-t border-slate-800/50 pt-4">
-                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-2">Workspace Controls</p>
-                                        <NavItem id="all_personal" icon="users" label="All User Accounts" />
-                                        <NavItem id="business" icon="briefcase" label="My Business" />
-                                        <NavItem id="admin" icon="shield" label="Manage Access" />
-                                    </div>
+                                    <NavItem id="all_personal" icon="users" label="Everyone's Personal" />
+                                    <NavItem id="business" icon="briefcase" label="My Business" />
                                 </>
                             )}
-                            <NavItem id="hub" icon="camera" label="Trip Hub" />
+                            {isKhataEligible && <NavItem id="khata" icon="book" label="My Khata" />}
+                            <NavItem id="hub" icon="camera" label="Trip Hub & Gallery" />
+                            {loggedInUser.role === 'admin' && <NavItem id="admin" icon="shield" label="Manage Access" />}
                         </div>
-                        <div className="p-4 border-t border-slate-800">
-                            <button onClick={handleLogout} className="w-full flex justify-center gap-2 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-sm font-medium transition-colors">
-                                {renderIcon('logOut', 'w-4 h-4')} Logout
-                            </button>
+
+                        <div className="p-4 border-t border-slate-800 space-y-4">
+                            <div className="space-y-2 mb-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase px-2">App Color Theme</label>
+                                <div className="flex gap-2 px-2">
+                                    {Object.keys(THEMES).map(color => (
+                                        <button key={color} onClick={() => { setAppTheme(color); localStorage.setItem('unimoney_theme', color); }} className={`w-6 h-6 rounded-full ${THEMES[color].main} ${appTheme === color ? 'ring-2 ring-white border-2 border-slate-900' : 'opacity-50 hover:opacity-100'}`} />
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase px-2">Display Currency</label>
+                                <select value={viewCurrency} onChange={(e) => setViewCurrency(e.target.value)} className="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-xl px-4 py-3 focus:outline-none">
+                                    <option value="INR">🇮🇳 INR (₹)</option>
+                                    <option value="USD">🇺🇸 USD ($)</option>
+                                    <option value="EUR">🇪🇺 EUR (€)</option>
+                                </select>
+                            </div>
+                            <button onClick={handleLogout} className="w-full py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-sm font-medium transition-colors">Logout Workspace</button>
                         </div>
                     </aside>
 
-                    <main className="flex-1 h-full overflow-y-auto bg-slate-900 pb-24 md:pb-0">
-                        <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 animate-tab">
-                            {uiError && <div className="bg-slate-800 border border-slate-600 px-4 py-3 rounded-xl font-medium shadow-lg mb-6 text-white text-sm">{uiError}</div>}
+                    <main className={`flex-1 h-full overflow-y-auto pt-16 md:pt-0 transition-colors duration-500 ${themeConfig.bg}`}>
+                        <div key={activeTab} className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 animate-tab">
 
-                            {/* SHARED TRIP */}
+                            {uiError && (
+                                <div className="bg-slate-800 border border-indigo-500/50 text-indigo-400 px-4 py-3 rounded-xl flex items-center gap-3 shadow-lg mb-6">
+                                    {renderIcon('sparkles', "w-5 h-5")}
+                                    <p className="text-sm font-medium">{uiError}</p>
+                                </div>
+                            )}
+
+                            {/* --- SHARED TRIP --- */}
                             {activeTab === 'group' && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700 shadow-xl relative overflow-hidden">
-                                            <h3 className="text-slate-400 text-[10px] font-bold uppercase mb-1">Total Group Spend</h3>
-                                            <p className="text-2xl font-black text-white">{formatAmount(groupTotal)}</p>
-                                        </div>
-                                        <div className="bg-gradient-to-br from-blue-900/40 to-slate-900 rounded-2xl p-5 border border-blue-500/30 shadow-xl relative overflow-hidden">
-                                            <h3 className="text-blue-300 text-[10px] font-bold uppercase mb-1">Per Person Share</h3>
-                                            <p className="text-2xl font-black text-white">{formatAmount(perPersonShare)}</p>
-                                        </div>
-                                    </div>
-
-                                    {groupTotal > 0 && settlements.length > 0 && (
-                                        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl overflow-hidden shadow-xl">
-                                            <div className="bg-emerald-900/40 px-4 py-3 border-b border-emerald-500/20">
-                                                <h3 className="text-xs font-bold text-emerald-400 uppercase">Who Owes Who</h3>
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('plus', "w-5 h-5 text-blue-400")} Add Group Expense</h2>
                                             </div>
-                                            <div className="p-4 space-y-3">
-                                                {settlements.map((s, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between text-sm bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-rose-400">{s.from}</span>
-                                                            {renderIcon('arrow', 'w-4 h-4 text-slate-500')}
-                                                            <span className="font-bold text-emerald-400">{s.to}</span>
-                                                        </div>
-                                                        <span className="font-black text-white">{formatAmount(s.amount)}</span>
+                                            <div className="p-5">
+                                                <form onSubmit={handleAddExpense} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Who paid?</label>
+                                                        {loggedInUser.role === 'admin' ? (
+                                                            <select value={newExpense.paidBy} onChange={e => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white appearance-none">
+                                                                <option value="">Select someone...</option>
+                                                                {appUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <div className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
+                                                                {renderIcon('shield', 'w-4 h-4 text-blue-500')} {loggedInUser.username} <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded ml-auto">Auto</span>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Description</label>
+                                                        <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="Dinner, Taxi..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                    </div>
+                                                    <button type="submit" className={`w-full py-3 rounded-xl font-bold text-white ${t.main} ${t.hover} shadow-lg ${t.shadow}`}>Save Expense</button>
+                                                </form>
                                             </div>
                                         </div>
-                                    )}
 
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 shadow-xl">
-                                        <h2 className="font-bold text-white mb-4">Add Group Expense</h2>
-                                        <form onSubmit={handleAddExpense} className="space-y-4">
-                                            {loggedInUser.role === 'admin' ? (
-                                                <select value={newExpense.paidBy} onChange={e => setNewExpense({...newExpense, paidBy: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white appearance-none" required>
-                                                    <option value="">Who paid?</option>
-                                                    {appUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                                                </select>
-                                            ) : (
-                                                <div className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
-                                                    {renderIcon('shield', 'w-4 h-4 text-blue-500')} {loggedInUser.username} <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded ml-auto">Auto</span>
+                                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 shadow-xl relative overflow-hidden">
+                                            <div className="absolute -right-6 -top-6 text-slate-700/30 w-32 h-32">{renderIcon('wallet', 'w-full h-full')}</div>
+                                            <h3 className="text-slate-400 text-xs font-bold uppercase mb-2 relative z-10">Total Group Spend</h3>
+                                            <p className="text-4xl font-black text-white relative z-10">{formatAmount(groupTotal)}</p>
+                                            
+                                            {/* ADDED PER PERSON SHARE HERE IN ORIGINAL UI STYLE */}
+                                            {appUsers.length > 0 && (
+                                                <div className="mt-4 pt-4 border-t border-slate-700/50 relative z-10 flex justify-between items-center">
+                                                    <span className="text-blue-300 text-[10px] font-bold uppercase tracking-wider">Per Person Share</span>
+                                                    <span className="text-xl font-bold text-white">{formatAmount(groupTotal / appUsers.length)}</span>
                                                 </div>
                                             )}
-                                            <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="What was it for?" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
-                                            <input type="number" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="Amount" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
-                                            <button type="submit" className={`w-full py-3 rounded-xl font-bold text-white ${t.main}`}>Save Expense</button>
-                                        </form>
-                                    </div>
-                                    <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
-                                        <div className="px-5 py-4 border-b border-slate-700 bg-slate-800/80"><h2 className="font-bold text-white">Group Ledger</h2></div>
-                                        <ul className="divide-y divide-slate-700/50">
-                                            {visibleExpenses.map(expense => (
-                                                <li key={expense.id} className="p-4 flex justify-between items-center">
-                                                    <div>
-                                                        <p className="font-bold text-white text-md">{expense.description}</p>
-                                                        <p className="text-xs text-slate-400 mt-1">{expense.paid_by} • {new Date(expense.timestamp).toLocaleDateString()}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="font-black text-white text-lg">{formatAmount(expense.amount)}</span>
-                                                        {loggedInUser.role === 'admin' && <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 p-2">{renderIcon('trash', 'w-4 h-4')}</button>}
-                                                    </div>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* MY PERSONAL (WITH DEDUCTION LOGIC) */}
-                            {activeTab === 'personal' && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-indigo-900/40 p-5 rounded-2xl border border-indigo-500/30 text-center">
-                                            <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Cash Balance</p>
-                                            <p className="text-2xl font-black text-white">{formatAmount(personalBalances.cash)}</p>
                                         </div>
-                                        <div className="bg-indigo-900/40 p-5 rounded-2xl border border-indigo-500/30 text-center">
-                                            <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">A/C Balance</p>
-                                            <p className="text-2xl font-black text-white">{formatAmount(personalBalances.account)}</p>
-                                        </div>
-                                    </div>
 
-                                    {/* Edit Balances Accordion */}
-                                    <details className="group bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-                                        <summary className="p-4 font-bold text-slate-300 cursor-pointer flex justify-between">Set Manual Balances <span className="text-xs font-normal opacity-50">(Tap to expand)</span></summary>
-                                        <div className="p-4 border-t border-slate-700">
-                                            <form onSubmit={handleSavePersonalBalances} className="flex gap-4">
-                                                <input type="number" step="0.01" value={personalBalances.cash} onChange={e => setPersonalBalances({...personalBalances, cash: parseFloat(e.target.value)||0})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="Cash" />
-                                                <input type="number" step="0.01" value={personalBalances.account} onChange={e => setPersonalBalances({...personalBalances, account: parseFloat(e.target.value)||0})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="Account" />
-                                                <button type="submit" className="bg-indigo-600 text-white px-4 rounded-lg text-sm font-bold">Sync</button>
-                                            </form>
-                                        </div>
-                                    </details>
-
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 shadow-xl">
-                                        <h2 className="font-bold text-white mb-4">Add Personal Expense</h2>
-                                        <form onSubmit={handleAddExpense} className="space-y-4">
-                                            <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="What was it for?" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
-                                            <div className="flex gap-4">
-                                                <input type="number" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="Amount" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white flex-[2]" required />
-                                                <select value={newExpense.source} onChange={e => setNewExpense({...newExpense, source: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white flex-1">
-                                                    <option value="account">A/C</option>
-                                                    <option value="cash">Cash</option>
-                                                </select>
+                                        {groupTotal > 0 && settlements.length > 0 && (
+                                            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-2xl overflow-hidden shadow-xl">
+                                                <div className="bg-emerald-900/40 px-5 py-3 border-b border-emerald-500/20">
+                                                    <h3 className="text-xs font-bold text-emerald-400 uppercase">Who Owes Who</h3>
+                                                </div>
+                                                <div className="p-4 space-y-3">
+                                                    {settlements.map((s, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between text-sm bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-rose-400">{s.from}</span>
+                                                                {renderIcon('arrow', 'w-4 h-4 text-slate-500')}
+                                                                <span className="font-bold text-emerald-400">{s.to}</span>
+                                                            </div>
+                                                            <span className="font-black text-white">{formatAmount(s.amount)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg">Save & Deduct Expense</button>
-                                        </form>
+                                        )}
+                                    </div>
+
+                                    <div className="xl:col-span-2">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
+                                            <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">Recent Transactions</h2>
+                                                <span className="bg-slate-900 text-slate-400 text-xs font-bold px-3 py-1 rounded-full border border-slate-700">{visibleExpenses.length} records</span>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto">
+                                                {visibleExpenses.length === 0 ? (
+                                                    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
+                                                        {renderIcon('wallet', 'w-8 h-8 opacity-50 mb-4')}
+                                                        <p>No expenses recorded yet.</p>
+                                                    </div>
+                                                ) : (
+                                                    <ul className="divide-y divide-slate-700/50">
+                                                        {visibleExpenses.map((expense) => {
+                                                            const payerUser = appUsers.find(u => u.username === expense.paid_by);
+                                                            return (
+                                                                <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex flex-col sm:flex-row justify-between group gap-4">
+                                                                    <div className="flex items-start gap-4">
+                                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg overflow-hidden bg-blue-500/20 text-blue-400 border border-blue-500/30`}>
+                                                                            {payerUser?.avatar ? <img src={payerUser.avatar} className="w-full h-full object-cover" /> : expense.paid_by.substring(0, 2)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-bold text-white text-lg">{expense.description}</p>
+                                                                            <p className="text-xs text-slate-400 mt-1">Paid by <span className="font-medium text-slate-300">{expense.paid_by}</span> • {new Date(expense.timestamp).toLocaleDateString()}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
+                                                                        <span className="font-black text-white text-xl">{formatAmount(expense.amount)}</span>
+                                                                        {loggedInUser.role === 'admin' && (
+                                                                            <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 hover:border-red-500/30 opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                                {renderIcon('trash', 'w-5 h-5')}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </li>
+                                                            );
+                                                        })}
+                                                    </ul>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
-                            {/* MY BUSINESS (ADMIN ONLY WITH DEDUCTION LOGIC) */}
-                            {activeTab === 'business' && loggedInUser.role === 'admin' && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-amber-900/40 p-5 rounded-2xl border border-amber-500/30 text-center">
-                                            <p className="text-[10px] text-amber-300 font-bold uppercase mb-1">Biz Cash Balance</p>
-                                            <p className="text-2xl font-black text-white">{formatAmount(bizBalances.cash)}</p>
+                            {/* --- MY PERSONAL TAB --- */}
+                            {activeTab === 'personal' && (
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+
+                                        {/* Wallet Balances Form */}
+                                        <div className="bg-slate-800/50 border border-indigo-500/30 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('wallet', "w-5 h-5 text-indigo-400")} My Wallet Balances</h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleSavePersonalBalances} className="space-y-4">
+                                                    <div className="flex gap-4">
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Cash in Hand</label>
+                                                            <input type="number" min="0" step="0.01" value={personalBalances.cash} onChange={e => setPersonalBalances({...personalBalances, cash: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">In Account</label>
+                                                            <input type="number" min="0" step="0.01" value={personalBalances.account} onChange={e => setPersonalBalances({...personalBalances, account: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" />
+                                                        </div>
+                                                    </div>
+                                                    <button type="submit" className={`w-full py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20`}>Save Balances</button>
+                                                </form>
+                                            </div>
+                                            <div className="bg-indigo-900/40 p-5 border-t border-indigo-500/20 text-center">
+                                                <p className="text-xs text-indigo-200 font-bold uppercase mb-1">My Total Personal Funds (Cash + A/C)</p>
+                                                <p className="text-2xl font-black text-white">{formatAmount((parseFloat(personalBalances.cash||0) + parseFloat(personalBalances.account||0)))}</p>
+                                            </div>
                                         </div>
-                                        <div className="bg-amber-900/40 p-5 rounded-2xl border border-amber-500/30 text-center">
-                                            <p className="text-[10px] text-amber-300 font-bold uppercase mb-1">Biz A/C Balance</p>
-                                            <p className="text-2xl font-black text-white">{formatAmount(bizBalances.account)}</p>
+
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('plus', "w-5 h-5 text-indigo-400")} Add Personal Expense</h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleAddExpense} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                        <input type="number" min="0.01" step="0.01" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" required />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Description</label>
+                                                        <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} placeholder="Souvenir..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white" required />
+                                                    </div>
+                                                    
+                                                    {/* ADDED SOURCE DEDUCTION DROPDOWN */}
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Deduct From</label>
+                                                        <select value={newExpense.source} onChange={e => setNewExpense({...newExpense, source: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white">
+                                                            <option value="account">A/C Balance</option>
+                                                            <option value="cash">Cash Balance</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20">Save & Deduct Expense</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <details className="group bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-                                        <summary className="p-4 font-bold text-slate-300 cursor-pointer flex justify-between">Set Manual Biz Balances <span className="text-xs font-normal opacity-50">(Tap to expand)</span></summary>
-                                        <div className="p-4 border-t border-slate-700">
-                                            <form onSubmit={handleSaveBizBalances} className="flex gap-4">
-                                                <input type="number" step="0.01" value={bizBalances.cash} onChange={e => setBizBalances({...bizBalances, cash: parseFloat(e.target.value)||0})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="Cash" />
-                                                <input type="number" step="0.01" value={bizBalances.account} onChange={e => setBizBalances({...bizBalances, account: parseFloat(e.target.value)||0})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="Account" />
-                                                <button type="submit" className="bg-amber-600 text-white px-4 rounded-lg text-sm font-bold">Sync</button>
-                                            </form>
+                                    <div className="xl:col-span-2">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
+                                            <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">My Recent Expenses</h2>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto">
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {visibleExpenses.map((expense) => (
+                                                        <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs uppercase border bg-indigo-500/10 text-indigo-400 border-indigo-500/20">P</div>
+                                                                <div>
+                                                                    <p className="font-bold text-white">{expense.description}</p>
+                                                                    <p className="text-xs text-slate-400 mt-1">{new Date(expense.timestamp).toLocaleDateString()}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <span className="font-black text-white text-lg">{formatAmount(expense.amount)}</span>
+                                                                <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2 rounded-lg border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">{renderIcon('trash', 'w-4 h-4')}</button>
+                                                            </div>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
                                         </div>
-                                    </details>
+                                    </div>
+                                </div>
+                            )}
 
-                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 shadow-xl">
-                                        <div className="flex gap-1 bg-slate-900 p-1 rounded-xl mb-4">
-                                            <button onClick={() => setBizTab('sale')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'sale' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>+ Log Sale</button>
-                                            <button onClick={() => setBizTab('exp')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'exp' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>+ Log Expense</button>
+                            {/* --- EVERYONE'S PERSONAL (ADMIN) TAB --- */}
+                            {activeTab === 'all_personal' && loggedInUser.role === 'admin' && (
+                                <div className="space-y-6">
+                                    <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                        <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">Everyone's Current Balances</h3></div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm">
+                                                <thead className="bg-slate-900/50 text-slate-400 font-bold uppercase text-[10px]">
+                                                        <tr>
+                                                            <th className="px-4 py-3">User</th>
+                                                            <th className="px-4 py-3 text-right">Cash</th>
+                                                            <th className="px-4 py-3 text-right">Account</th>
+                                                            <th className="px-4 py-3 text-right text-white">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-700/50">
+                                                        {appUsers.map(u => {
+                                                            const b = allUserBalances[u.username];
+                                                            return (
+                                                                <tr key={u.id} className="hover:bg-slate-800/30">
+                                                                    <td className="px-4 py-3 font-bold text-white flex items-center gap-2">
+                                                                        <div className="w-6 h-6 rounded-full bg-slate-700 overflow-hidden text-[8px] flex items-center justify-center">{u.avatar ? <img src={u.avatar} className="w-full h-full object-cover"/> : u.username.substring(0,2)}</div>
+                                                                        {u.username}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-right text-slate-300">{formatAmount(b.cash)}</td>
+                                                                    <td className="px-4 py-3 text-right text-slate-300">{formatAmount(b.account)}</td>
+                                                                    <td className="px-4 py-3 text-right font-black text-cyan-400">{formatAmount(b.total)}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
 
-                                        {bizTab === 'sale' && (
-                                            <form onSubmit={handleAddBizSale} className="space-y-4">
-                                                <div className="flex gap-3">
-                                                    <div className="flex-[2]">
-                                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Product Name</label>
-                                                        <input type="text" value={bizSaleForm.name} onChange={e => setBizSaleForm({...bizSaleForm, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none text-white" required />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Qty</label>
-                                                        <input type="number" min="1" value={bizSaleForm.qty} onChange={e => setBizSaleForm({...bizSaleForm, qty: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none text-white" required />
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-3 gap-3">
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-rose-500 mb-1">Buy/pc</label>
-                                                        <input type="number" step="0.01" value={bizSaleForm.buy} onChange={e => setBizSaleForm({...bizSaleForm, buy: e.target.value})} className="w-full bg-slate-900 border border-rose-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none text-white" placeholder="0" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-amber-500 mb-1">Exp/pc</label>
-                                                        <input type="number" step="0.01" value={bizSaleForm.exp} onChange={e => setBizSaleForm({...bizSaleForm, exp: e.target.value})} className="w-full bg-slate-900 border border-amber-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none text-white" placeholder="0" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-emerald-500 mb-1">Sell/pc</label>
-                                                        <input type="number" step="0.01" value={bizSaleForm.sell} onChange={e => setBizSaleForm({...bizSaleForm, sell: e.target.value})} className="w-full bg-slate-900 border border-emerald-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none text-white" required placeholder="0" />
-                                                    </div>
-                                                </div>
-                                                <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/20">Save Sale</button>
-                                            </form>
-                                        )}
+                                    <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                        <div className="p-4 border-b border-slate-700 bg-slate-800/80"><h3 className="font-bold text-white">All Personal Expenses Feed</h3></div>
+                                        <div className="max-h-[400px] overflow-y-auto">
+                                            <ul className="divide-y divide-slate-700/50">
+                                                {visibleExpenses.map((expense) => (
+                                                    <li key={expense.id} className="p-4 flex items-center justify-between hover:bg-slate-800/50">
+                                                        <div>
+                                                            <p className="font-bold text-white">{expense.description}</p>
+                                                            <p className="text-xs text-slate-400 mt-0.5">By <span className="font-bold text-slate-300">{expense.paid_by}</span> • {new Date(expense.timestamp).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <span className="font-black text-white text-lg">{formatAmount(expense.amount)}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
-                                        {bizTab === 'exp' && (
-                                            <form onSubmit={handleAddBizExp} className="space-y-4">
-                                                <input type="text" value={bizExpForm.description} onChange={e => setBizExpForm({...bizExpForm, description: e.target.value})} placeholder="Marketing, Software..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
-                                                <div className="flex gap-4">
-                                                    <input type="number" step="0.01" value={bizExpForm.amount} onChange={e => setBizExpForm({...bizExpForm, amount: e.target.value})} placeholder="Amount" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white flex-[2]" required />
-                                                    <select value={bizExpForm.source} onChange={e => setBizExpForm({...bizExpForm, source: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white flex-1">
-                                                        <option value="account">A/C</option>
-                                                        <option value="cash">Cash</option>
-                                                    </select>
+                            {/* --- MY KHATA TAB --- */}
+                            {activeTab === 'khata' && isKhataEligible && (
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-5 border-b border-slate-700 bg-slate-800/80">
+                                                <h2 className="font-bold text-white flex items-center gap-2">{renderIcon('book', "w-5 h-5 text-emerald-400")} Add Khata Entry</h2>
+                                            </div>
+                                            <div className="p-5">
+                                                <form onSubmit={handleAddKhata} className="space-y-4">
+
+                                                    {/* Reversed Logic: Take = Owe (Red), Give = Owed (Green) */}
+                                                    <div className="flex gap-3 mb-6 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                                                        <button type="button" onClick={() => setKhataForm({...khataForm, mode: 'take'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${khataForm.mode === 'take' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>I Take (I Owe)</button>
+                                                        <button type="button" onClick={() => setKhataForm({...khataForm, mode: 'give'})} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${khataForm.mode === 'give' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>I Give (Get Back)</button>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Name</label>
+                                                        <input type="text" value={khataForm.name} onChange={e => setKhataForm({...khataForm, name: e.target.value})} placeholder="Person's name..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                    </div>
+                                                    <div className="flex gap-4">
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount</label>
+                                                            <input type="number" min="0.01" step="0.01" value={khataForm.amount} onChange={e => setKhataForm({...khataForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Date</label>
+                                                            <input type="date" value={khataForm.date} onChange={e => setKhataForm({...khataForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                    </div>
+                                                    <button type="submit" className={`w-full py-3 mt-4 rounded-xl font-bold text-white shadow-lg ${khataForm.mode === 'take' ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'}`}>Save Entry</button>
+                                                </form>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gradient-to-br from-emerald-900 to-slate-900 rounded-2xl p-6 border border-emerald-500/30 shadow-xl relative overflow-hidden">
+                                            <div className="absolute -right-6 -top-6 text-emerald-500/20 w-32 h-32">{renderIcon('book', 'w-full h-full')}</div>
+                                            <h3 className="text-emerald-300 text-xs font-bold uppercase mb-4 relative z-10">Your Khata Summary</h3>
+                                            <div className="relative z-10 space-y-4">
+                                                <div className="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                                                    <span className="text-rose-200 font-medium text-sm">Total I Took (I Owe):</span>
+                                                    <span className="text-lg font-black text-rose-400">{formatAmount(khataTotals.take)}</span>
                                                 </div>
-                                                <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-500 shadow-lg">Save & Deduct Biz Expense</button>
-                                            </form>
-                                        )}
+                                                <div className="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                                                    <span className="text-emerald-200 font-medium text-sm">Total I Gave (To Get):</span>
+                                                    <span className="text-lg font-black text-emerald-400">{formatAmount(khataTotals.give)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-1">
+                                                    <span className="text-white font-bold text-sm">Net Balance:</span>
+                                                    <span className={`text-2xl font-black ${khataTotals.net === 0 ? 'text-white' : khataTotals.net > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                        {khataTotals.net === 0 ? 'Settled Up' : khataTotals.net > 0 ? `+${formatAmount(khataTotals.net)}` : `-${formatAmount(Math.abs(khataTotals.net))}`}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="xl:col-span-2">
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[500px] shadow-xl">
+                                            <div className="px-6 py-5 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">Khata Ledger</h2>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto">
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {myKhataExpenses.map((expense) => {
+                                                        const isTake = expense.type === 'khata_take'; // Take = Owe = Red
+                                                        return (
+                                                            <li key={expense.id} className="p-5 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0 shadow-lg border ${isTake ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}>
+                                                                        {expense.description.substring(0, 2)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="font-bold text-white text-lg">{expense.description}</p>
+                                                                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${isTake ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                                                                                {isTake ? 'I Took (Owe)' : 'I Gave (Get)'}
+                                                                            </span> • {new Date(expense.timestamp).toLocaleDateString()}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`font-black text-xl ${isTake ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                                        {isTake ? '-' : '+'}{formatAmount(expense.amount)}
+                                                                    </span>
+                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2.5 rounded-xl border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">{renderIcon('trash', 'w-5 h-5')}</button>
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- MY BUSINESS TAB (ADMIN ONLY) --- */}
+                            {activeTab === 'business' && loggedInUser.role === 'admin' && (
+                                <div className="grid xl:grid-cols-3 gap-8">
+                                    <div className="xl:col-span-1 space-y-6">
+
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                                            <div className="p-2 border-b border-slate-700 bg-slate-800/80">
+                                                <div className="flex gap-1 bg-slate-900 p-1 rounded-xl">
+                                                    <button onClick={() => setBizTab('sale')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'sale' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>+ Sale</button>
+                                                    <button onClick={() => setBizTab('exp')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'exp' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>+ Exp</button>
+                                                    <button onClick={() => setBizTab('bal')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${bizTab === 'bal' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>+ Balances</button>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-5">
+                                                {bizTab === 'sale' && (
+                                                    <form onSubmit={handleAddBizSale} className="space-y-4">
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-[2]">
+                                                                <label className="block text-[11px] font-bold text-slate-400 mb-1">Product Name</label>
+                                                                <input type="text" value={bizSaleForm.name} onChange={e => setBizSaleForm({...bizSaleForm, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white text-white" required />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-[11px] font-bold text-slate-400 mb-1">Qty</label>
+                                                                <input type="number" min="1" value={bizSaleForm.qty} onChange={e => setBizSaleForm({...bizSaleForm, qty: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-white text-white" required />
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-3">
+                                                            <div>
+                                                                <label className="block text-[11px] font-bold text-rose-500 mb-1">Buy/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.buy} onChange={e => setBizSaleForm({...bizSaleForm, buy: e.target.value})} className="w-full bg-slate-900 border border-rose-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-rose-400 text-white" placeholder="0" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[11px] font-bold text-amber-500 mb-1">Exp/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.exp} onChange={e => setBizSaleForm({...bizSaleForm, exp: e.target.value})} className="w-full bg-slate-900 border border-amber-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-amber-400 text-white" placeholder="0" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[11px] font-bold text-emerald-500 mb-1">Sell/pc</label>
+                                                                <input type="number" step="0.01" value={bizSaleForm.sell} onChange={e => setBizSaleForm({...bizSaleForm, sell: e.target.value})} className="w-full bg-slate-900 border border-emerald-500/30 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-emerald-400 text-white" required placeholder="0" />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-bold text-slate-400 mb-1">Date</label>
+                                                            <input type="date" value={bizSaleForm.date} onChange={e => setBizSaleForm({...bizSaleForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/20">Save Sale</button>
+                                                    </form>
+                                                )}
+
+                                                {bizTab === 'exp' && (
+                                                    <form onSubmit={handleAddBizExp} className="space-y-4">
+                                                        <div>
+                                                            <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Expense Details</label>
+                                                            <input type="text" value={bizExpForm.description} onChange={e => setBizExpForm({...bizExpForm, description: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-[2]">
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Amount</label>
+                                                                <input type="number" step="0.01" value={bizExpForm.amount} onChange={e => setBizExpForm({...bizExpForm, amount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Deduct</label>
+                                                                <select value={bizExpForm.source} onChange={e => setBizExpForm({...bizExpForm, source: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white">
+                                                                    <option value="account">A/C</option>
+                                                                    <option value="cash">Cash</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Date</label>
+                                                            <input type="date" value={bizExpForm.date} onChange={e => setBizExpForm({...bizExpForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" required />
+                                                        </div>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20">Save & Deduct Biz Expense</button>
+                                                    </form>
+                                                )}
+
+                                                {bizTab === 'bal' && (
+                                                    <form onSubmit={handleSaveBizBalances} className="space-y-4">
+                                                        <p className="text-xs text-slate-400 mb-4">Set your current available business funds.</p>
+                                                        <div className="flex gap-3">
+                                                            <div className="flex-1">
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Biz Cash</label>
+                                                                <input type="number" step="0.01" value={bizBalances.cash} onChange={e => setBizBalances({...bizBalances, cash: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" />
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Biz A/C</label>
+                                                                <input type="number" step="0.01" value={bizBalances.account} onChange={e => setBizBalances({...bizBalances, account: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none text-white" />
+                                                            </div>
+                                                        </div>
+                                                        <button type="submit" className="w-full py-3 rounded-xl font-bold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600">Save Biz Balances</button>
+                                                    </form>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-violet-900/40 p-5 border-t border-violet-500/20 text-center">
+                                                <p className="text-xs text-violet-200 font-bold uppercase mb-1">Total Business Funds (Cash + A/C)</p>
+                                                <p className="text-2xl font-black text-white">{formatAmount((parseFloat(bizBalances.cash || 0) + parseFloat(bizBalances.account || 0)))}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="xl:col-span-2 space-y-6">
+
+                                        <div className="bg-gradient-to-r from-blue-900/50 to-violet-900/50 p-6 rounded-2xl border border-blue-500/30 shadow-xl flex justify-between items-center relative overflow-hidden">
+                                            <div className="absolute -right-10 -bottom-10 text-white/5 w-48 h-48">{renderIcon('wallet', 'w-full h-full')}</div>
+                                            <div className="relative z-10">
+                                                <p className="text-xs font-bold text-blue-300 uppercase mb-1 tracking-wider">My Total Combined Wealth</p>
+                                                <p className="text-sm text-slate-300 mb-3">Personal (Cash + A/C) + Business (Cash + A/C)</p>
+                                                <p className="text-4xl font-black text-white">
+                                                    {formatAmount(
+                                                        (parseFloat(personalBalances.cash||0) + parseFloat(personalBalances.account||0)) + 
+                                                        (parseFloat(bizBalances.cash||0) + parseFloat(bizBalances.account||0))
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Revenue</p>
+                                                <p className="text-xl font-black text-emerald-400">{formatAmount(bizTotals.sales)}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 text-center">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Costs</p>
+                                                <p className="text-xl font-black text-rose-400">{formatAmount(bizTotals.costs)}</p>
+                                            </div>
+                                            <div className="bg-violet-900/40 p-4 rounded-2xl border border-violet-500/30 text-center col-span-2 relative overflow-hidden">
+                                                <div className={`absolute -right-4 -top-4 w-20 h-20 opacity-10 text-violet-400`}>{renderIcon('briefcase', 'w-full h-full')}</div>
+                                                <p className="text-[10px] font-bold text-violet-300 uppercase mb-1 relative z-10">Net Profit</p>
+                                                <p className={`text-2xl font-black relative z-10 ${bizTotals.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {bizTotals.profit >= 0 ? '+' : '-'}{formatAmount(Math.abs(bizTotals.profit))}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
+                                            <div className="px-6 py-4 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
+                                                <h2 className="font-bold text-white">Business Ledger</h2>
+                                                <span className="bg-slate-900 text-slate-400 text-xs font-bold px-3 py-1 rounded-full border border-slate-700">{bizRecords.length} records</span>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto">
+                                                <ul className="divide-y divide-slate-700/50">
+                                                    {bizRecords.map((expense) => {
+                                                        const isSale = expense.type === 'biz_sale';
+                                                        let name = expense.description;
+                                                        let details = "";
+                                                        if (isSale) {
+                                                            try {
+                                                                const d = JSON.parse(expense.description);
+                                                                name = d.name;
+                                                                details = `${d.qty}x @ ${d.sell} (Cost: ${d.buy+d.exp})`;
+                                                            } catch(e){}
+                                                        }
+                                                        return (
+                                                            <li key={expense.id} className="p-4 hover:bg-slate-800/50 flex items-center justify-between group">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${isSale ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                                                                        {isSale ? '+S' : '-E'}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="font-bold text-white">{name}</p>
+                                                                        <p className="text-xs text-slate-400 mt-0.5">{new Date(expense.timestamp).toLocaleDateString()} {details && `• ${details}`}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`font-black text-lg ${isSale ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                                        {isSale ? '+' : '-'}{formatAmount(expense.amount)}
+                                                                    </span>
+                                                                    <button onClick={() => handleDeleteExpense(expense.id)} className="text-slate-600 hover:text-red-400 bg-slate-900 p-2 rounded-lg border border-slate-800 opacity-0 group-hover:opacity-100 hidden sm:block">
+                                                                        {renderIcon('trash', 'w-4 h-4')}
+                                                                    </button>
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- HUB & GALLERY TAB --- */}
+                            {activeTab === 'hub' && (
+                                <div className="space-y-6">
+                                    <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
+                                        <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
+                                        <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
+                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Access our 5TB shared Google Drive! You can instantly upload your photos and videos, or download the full trip collection.</p>
+                                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
+                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/20">{renderIcon('camera', 'w-5 h-5')} Upload Media</a>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -721,34 +1284,8 @@
                                 </div>
                             )}
 
-                            {/* --- HUB & KHATA MAINTAINED IN TAB RENDERING LOGIC AS BEFORE --- */}
-                            {activeTab === 'hub' && (
-                                <div className="space-y-6">
-                                    <div className="bg-gradient-to-br from-indigo-900/50 to-blue-900/50 border border-indigo-500/30 rounded-2xl p-8 text-center relative overflow-hidden">
-                                        <div className="absolute -right-10 -bottom-10 text-white/5 w-64 h-64">{renderIcon('camera', 'w-full h-full')}</div>
-                                        <h2 className="text-3xl font-black text-white mb-2 relative z-10">Trip Photo Gallery</h2>
-                                        <p className="text-indigo-200 mb-8 max-w-lg mx-auto relative z-10">Access our 5TB shared Google Drive! You can instantly upload your photos and videos, or download the full trip collection.</p>
-                                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
-                                            <a href={GDRIVE_LINK} target="_blank" rel="noreferrer" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/20">{renderIcon('camera', 'w-5 h-5')} Upload Media</a>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
                         </div>
                     </main>
-
-                    {/* Bottom Mobile Navigation (Native App Feel) */}
-                    <nav className="md:hidden fixed bottom-0 left-0 right-0 glass-panel z-50 flex justify-around items-center pt-3 pb-6 px-2 border-t border-slate-800">
-                        <NavItem isMobile id="group" icon="users" label="Group" />
-                        <NavItem isMobile id="personal" icon="wallet" label="Wallet" />
-                        {isKhataEligible && <NavItem isMobile id="khata" icon="book" label="Khata" />}
-                        {loggedInUser.role === 'admin' && <NavItem isMobile id="business" icon="briefcase" label="Biz" />}
-                        <button onClick={handleLogout} className="flex flex-col items-center justify-center w-full space-y-1 text-slate-500 hover:text-red-400">
-                            {renderIcon('logOut', "w-6 h-6")}
-                            <span className="text-[10px] font-medium">Exit</span>
-                        </button>
-                    </nav>
                 </div>
             );
         }
